@@ -121,6 +121,11 @@ HERMES_API_KEY=your-secret-key pnpm start
 | `PORT` | `8787` | Middleware listen port |
 | `HOST` | `0.0.0.0` | Middleware bind address |
 | `HERMES_DASHBOARD_DB` | `~/.hermes-dashboard/tasks.db` | SQLite database path |
+| `EMBEDDING_ENDPOINT` | *(same as HERMES_ENDPOINT)* | OpenAI-compatible embedding API base URL |
+| `EMBEDDING_API_KEY` | *(same as HERMES_API_KEY)* | API key for embedding endpoint |
+| `EMBEDDING_MODEL` | `text-embedding-3-small` | Embedding model ID |
+
+> **Knowledge base**: When `EMBEDDING_ENDPOINT` + `EMBEDDING_API_KEY` are set, knowledge entries are stored with vector embeddings and recalled via cosine similarity. Without them, FTS5 keyword search with LLM query expansion is used as fallback.
 
 ## Project Structure
 
