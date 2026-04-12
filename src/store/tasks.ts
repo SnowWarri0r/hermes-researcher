@@ -23,6 +23,7 @@ interface TaskStore {
   activeTaskDetail: TaskDetail | null;
   activeTaskError: string | null;
   streamingText: string;
+  streamingPhaseKind: string;
   activeUnsub: (() => void) | null;
 
   setConnected: (c: boolean) => void;
@@ -56,6 +57,7 @@ export const useTaskStore = create<TaskStore>()((set, get) => ({
   activeTaskDetail: null,
   activeTaskError: null,
   streamingText: "",
+  streamingPhaseKind: "",
   activeUnsub: null,
 
   setConnected(connected) {
@@ -152,6 +154,7 @@ export const useTaskStore = create<TaskStore>()((set, get) => ({
       activeTaskDetail: null,
       activeTaskError: null,
       streamingText: "",
+      streamingPhaseKind: "",
       activeUnsub: null,
     });
 
@@ -167,16 +170,25 @@ export const useTaskStore = create<TaskStore>()((set, get) => ({
           (event) => {
             if (get().activeTaskId !== id) return;
 
+            if (event.event === "phase.started") {
+              const data = event as unknown as Record<string, unknown>;
+              set({ streamingText: "", streamingPhaseKind: String(data.kind ?? "") });
+              get().refreshActive();
+            }
+
             if (event.event === "message.delta" && event.delta) {
-              set((s) => ({ streamingText: s.streamingText + event.delta }));
+              // Only accumulate streaming text for report-producing phases
+              const kind = get().streamingPhaseKind;
+              const reportPhases = ["write", "draft", "revise"];
+              if (reportPhases.includes(kind)) {
+                set((s) => ({ streamingText: s.streamingText + event.delta }));
+              }
             }
 
             if (
               event.event === "phase.completed" ||
-              event.event === "phase.failed" ||
-              event.event === "phase.started"
+              event.event === "phase.failed"
             ) {
-              // Phase transition: clear streaming text and refresh full state
               set({ streamingText: "" });
               get().refreshActive();
             }
@@ -219,6 +231,7 @@ export const useTaskStore = create<TaskStore>()((set, get) => ({
       activeTaskDetail: null,
       activeTaskError: null,
       streamingText: "",
+      streamingPhaseKind: "",
       activeUnsub: null,
     });
   },

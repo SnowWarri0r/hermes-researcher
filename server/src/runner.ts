@@ -63,16 +63,17 @@ const phaseControllers = new Map<number, AbortController>();
 async function runPhase(opts: {
   taskId: string;
   phaseId: number;
+  kind: string;
   prompt: string;
 }): Promise<{ output: string; usage?: TokenUsage }> {
-  const { taskId, phaseId, prompt } = opts;
+  const { taskId, phaseId, kind, prompt } = opts;
 
   const runId = await startHermesRun(prompt);
   store.markPhaseRunning(phaseId, runId);
 
   broadcast(taskId, {
     event: "phase.started",
-    data: { phaseId, runId },
+    data: { phaseId, runId, kind },
   });
 
   const controller = new AbortController();
@@ -243,6 +244,7 @@ async function runQuickMode(
   const result = await runPhase({
     taskId: opts.taskId,
     phaseId: phase.id,
+    kind: "write",
     prompt: directReportPrompt({
       goal: opts.goal,
       context: opts.context,
@@ -275,6 +277,7 @@ async function runStandardMode(
   const result = await runPhase({
     taskId: opts.taskId,
     phaseId: draftPhase.id,
+    kind: "draft",
     prompt: draftPrompt({
       goal: opts.goal,
       context: opts.context,
@@ -309,6 +312,7 @@ async function runDeepMode(
   const draftResult = await runPhase({
     taskId: opts.taskId,
     phaseId: draftPhase.id,
+    kind: "draft",
     prompt: draftPrompt({
       goal: opts.goal,
       context: opts.context,
@@ -334,6 +338,7 @@ async function runDeepMode(
   const critiqueResult = await runPhase({
     taskId: opts.taskId,
     phaseId: critiquePhase.id,
+    kind: "critique",
     prompt: critiquePrompt({ goal: opts.goal, draft: draftResult.output }),
   });
   usages.push(critiqueResult.usage);
@@ -349,6 +354,7 @@ async function runDeepMode(
   const reviseResult = await runPhase({
     taskId: opts.taskId,
     phaseId: revisePhase.id,
+    kind: "revise",
     prompt: revisePrompt({
       goal: opts.goal,
       context: opts.context,
@@ -398,6 +404,7 @@ async function runPlanAndResearch(
   const planResult = await runPhase({
     taskId,
     phaseId: planPhase.id,
+    kind: "plan",
     prompt: planPromptText,
   });
   usages.push(planResult.usage);
@@ -436,6 +443,7 @@ async function runPlanAndResearch(
       runPhase({
         taskId,
         phaseId: researchPhases[i].id,
+        kind: "research",
         prompt: researchPrompt({ goal, question: q, context }),
       }).then((r) => ({ question: q, output: r.output, usage: r.usage }))
     )
