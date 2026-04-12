@@ -1,0 +1,173 @@
+# Hermes Dashboard
+
+A deep-research task delegation frontend for [Hermes Agent](https://github.com/NousResearch/hermes-agent). Dispatch research tasks, watch them execute through a multi-phase pipeline, and refine reports iteratively.
+
+```
+User goal
+  |  Plan          -- structured research plan (JSON)
+  |  Research x N  -- parallel investigation threads
+  |  Draft         -- synthesize findings into report
+  |  Critique      -- strict self-review
+  v  Revise        -- final report incorporating critique
+```
+
+## Features
+
+**Multi-phase pipeline** -- Tasks run through Plan, parallel Research, Draft, Critique, and Revise stages. Each phase is a separate Hermes agent invocation with a tailored prompt.
+
+**Three modes** -- Quick (1 call, direct report), Standard (plan + research + draft), Deep (full 5-stage pipeline with self-critique).
+
+**Real-time streaming** -- Report text streams live during write/draft/revise phases with auto-scroll and a blinking cursor. Incomplete markdown syntax (`**`, `` ` ``, `[`) is sanitized mid-stream.
+
+**Pipeline visualization** -- Sidebar shows each phase's status, tool calls, token usage, and duration. Parallel research branches display in a grid with completion counts.
+
+**Iterative refinement** -- Follow-up requests re-run the full pipeline against the prior report. Version tabs let you browse v1, v2, v3... and a line-level diff view highlights changes.
+
+**Persistent storage** -- All tasks, turns, phases, and events stored in SQLite (`~/.hermes-dashboard/tasks.db`). Survives browser refreshes, device switches, server restarts.
+
+**Search, filter, tags, pin** -- Keyword search, status filter (All/Running/Done/Failed), `#tag` labels, star to pin important research.
+
+**Language preference** -- Auto, Chinese, English, Japanese. Injected into every prompt's style guide.
+
+**Export** -- Copy Markdown to clipboard or download as `.md` file.
+
+**Desktop notifications** -- Browser notification when a pipeline completes or fails (only fires when the page is not focused).
+
+**LAN accessible** -- Both frontend and middleware bind `0.0.0.0` by default.
+
+## Architecture
+
+```
+Browser (React + Vite)
+    |  /api/*
+Middleware (Hono + SQLite)       <-- orchestrates pipeline, persists state
+    |  /v1/runs + SSE
+Hermes Gateway (port 8642)       <-- the actual AI agent
+```
+
+The middleware is the brain. It:
+- Breaks tasks into pipeline phases
+- Starts Hermes runs for each phase
+- Subscribes to Hermes SSE events, persists them, broadcasts to frontend
+- Runs parallel research branches via `Promise.all`
+- Compresses prior reports before injecting into follow-up prompts (>6k chars)
+
+The frontend is stateless -- it fetches everything from the middleware API.
+
+## Quick Start
+
+### Prerequisites
+
+- **Node.js** >= 18
+- **pnpm**
+- **Hermes Agent** installed and configured ([setup guide](https://github.com/NousResearch/hermes-agent))
+- Hermes gateway running with API server enabled
+
+### 1. Configure Hermes
+
+Add to `~/.hermes/.env`:
+
+```bash
+API_SERVER_KEY=your-secret-key
+API_SERVER_ENABLED=true
+API_SERVER_CORS_ORIGINS=http://localhost:5173,http://127.0.0.1:5173
+```
+
+Start the gateway:
+
+```bash
+hermes gateway start
+```
+
+### 2. Install & Run
+
+```bash
+git clone https://github.com/user/hermes-dashboard.git
+cd hermes-dashboard
+
+# Install frontend + server deps
+pnpm install
+cd server && pnpm install && cd ..
+
+# Start both (frontend on :5173, middleware on :8787)
+HERMES_API_KEY=your-secret-key pnpm dev
+```
+
+Open `http://localhost:5173`.
+
+### Production
+
+```bash
+pnpm build
+HERMES_API_KEY=your-secret-key pnpm start
+# Single server on :8787 serving API + static frontend
+```
+
+## Configuration
+
+| Environment Variable | Default | Description |
+|---|---|---|
+| `HERMES_API_KEY` | *(required)* | Bearer token matching `API_SERVER_KEY` in Hermes |
+| `HERMES_ENDPOINT` | `http://127.0.0.1:8642` | Hermes gateway URL |
+| `PORT` | `8787` | Middleware listen port |
+| `HOST` | `0.0.0.0` | Middleware bind address |
+| `HERMES_DASHBOARD_DB` | `~/.hermes-dashboard/tasks.db` | SQLite database path |
+
+## Project Structure
+
+```
+hermes-dashboard/
+  src/                     # React frontend
+    api/client.ts          # API client + SSE subscriber
+    store/tasks.ts         # Zustand store
+    components/
+      tasks/
+        TaskCreator.tsx    # New task form (mode, language, toolsets)
+        TaskList.tsx       # Search + filter + task cards
+        TaskCard.tsx       # Card with progress bar, pin, status
+        TaskDetail.tsx     # Slide-out panel with report + pipeline
+        PipelineView.tsx   # Phase visualization with expand/collapse
+        ReportDiff.tsx     # Line-level version diff
+  server/
+    src/
+      index.ts             # Hono routes + SSE endpoint
+      db.ts                # SQLite schema + queries
+      runner.ts            # Pipeline orchestrator (plan/research/draft/critique/revise)
+      hermes.ts            # Hermes API client + SSE consumer
+      prompt.ts            # All prompt templates per phase
+  shared/
+    types.ts               # Shared TypeScript types
+```
+
+## Tech Stack
+
+| Layer | Tech |
+|---|---|
+| Frontend | React 19, Vite, Tailwind CSS v4, Zustand, react-markdown |
+| Middleware | Hono, better-sqlite3, Node.js |
+| Agent | Hermes Agent (any LLM provider it supports) |
+| Design | VoltAgent dark theme (Abyss Black + Emerald Signal Green) |
+
+## How the Pipeline Works
+
+### Plan Phase
+The planner decomposes the goal into 3-7 report sections and 3-6 focused research questions. Output is structured JSON.
+
+### Research Phase (parallel)
+Each question becomes an independent Hermes run. They execute concurrently (up to 5). Each produces a raw findings document with citations.
+
+### Draft Phase
+Synthesizes the plan + all findings into a complete Markdown report.
+
+### Critique Phase
+Acts as a strict peer reviewer. Produces a prioritized list of content gaps, weak claims, structural issues, and missing citations.
+
+### Revise Phase
+Rewrites the report incorporating the critique. The output is the final deliverable -- it reads as a freshly-written standalone document.
+
+### Follow-up
+Requesting a refinement re-runs the full pipeline with the prior report condensed into the plan prompt. The new version integrates changes naturally without meta-commentary about what changed.
+
+## License
+
+MIT
