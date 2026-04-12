@@ -9,8 +9,6 @@
 [![GitHub issues](https://img.shields.io/github/issues/SnowWarri0r/hermes-dashboard)](https://github.com/SnowWarri0r/hermes-dashboard/issues)
 [![GitHub last commit](https://img.shields.io/github/last-commit/SnowWarri0r/hermes-dashboard)](https://github.com/SnowWarri0r/hermes-dashboard/commits/main)
 
-[![Star History Chart](https://api.star-history.com/svg?repos=SnowWarri0r/hermes-dashboard&type=Date)](https://star-history.com/#SnowWarri0r/hermes-dashboard&Date)
-
 A deep-research task delegation frontend for [Hermes Agent](https://github.com/NousResearch/hermes-agent). Dispatch research tasks, watch them execute through a multi-phase pipeline, and refine reports iteratively.
 
 ```
@@ -178,6 +176,10 @@ Rewrites the report incorporating the critique. The output is the final delivera
 
 ### Follow-up
 Requesting a refinement re-runs the full pipeline with the prior report condensed into the plan prompt. The new version integrates changes naturally without meta-commentary about what changed.
+
+## Star History
+
+[![Star History Chart](https://api.star-history.com/svg?repos=SnowWarri0r/hermes-dashboard&type=Date)](https://star-history.com/#SnowWarri0r/hermes-dashboard&Date)
 
 ## License
 
