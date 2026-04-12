@@ -192,7 +192,6 @@ app.post("/api/templates", async (c) => {
   const tpl: TaskTemplate = {
     ...body,
     id: `tpl_${randomUUID().replace(/-/g, "").slice(0, 12)}`,
-    variables: extractVariables(body.goal),
     createdAt: Date.now(),
   };
   addTemplate(tpl);
@@ -203,12 +202,6 @@ app.delete("/api/templates/:id", (c) => {
   deleteTemplate(c.req.param("id"));
   return c.json({ ok: true });
 });
-
-function extractVariables(goal: string): string[] {
-  const matches = goal.match(/\{(\w+)\}/g);
-  if (!matches) return [];
-  return [...new Set(matches.map((m) => m.slice(1, -1)))];
-}
 
 // ---------------------------------------------------------------------------
 // Knowledge base
