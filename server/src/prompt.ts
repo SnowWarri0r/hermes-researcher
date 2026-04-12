@@ -18,6 +18,7 @@ function styleGuide(language?: string): string {
 
 // ---------------------------------------------------------------------------
 // 1. PLAN — produce structured research plan as JSON
+// Budget: ~300 words output. This is a routing phase, not content.
 // ---------------------------------------------------------------------------
 export function planPrompt(opts: {
   goal: string;
@@ -31,81 +32,119 @@ export function planPrompt(opts: {
       : "";
   return `# Research planning
 
-You are the **planner** for a multi-phase deep-research pipeline. Your job is to break down the user's goal into a research plan. You are NOT writing the report — a later phase does that.
+Break down the user's goal into a research plan. You are NOT writing the report.
 
 ## User goal
 
 ${opts.goal}
-${opts.context ? `\n## User-provided context\n\n${opts.context}\n` : ""}${toolsetsBlock}
+${opts.context ? `\n## Context\n\n${opts.context}\n` : ""}${toolsetsBlock}
 
-## Your output
+## Output format
 
-Produce TWO parts:
-
-### Part 1 — Short reasoning (Markdown, under 200 words)
-
-Briefly explain how you're decomposing the task — what are the core axes of investigation, what's tricky, what's ambiguous.
-
-### Part 2 — Structured plan (strict JSON inside a \`\`\`json fenced block)
+1. **Reasoning** (under 100 words): how you're decomposing this.
+2. **Plan JSON** in a \`\`\`json block:
 
 \`\`\`json
 {
-  "sections": ["Section A", "Section B", "..."],
+  "sections": ["TL;DR", "Section B", "..."],
   "questions": [
-    {"id": "Q1", "title": "short focus question", "approach": "1 sentence on what to look for / which sources to check"},
+    {"id": "Q1", "title": "specific question", "approach": "what to search/check"},
     {"id": "Q2", "title": "...", "approach": "..."}
   ]
 }
 \`\`\`
 
-### Constraints on the plan
+## Rules
 
-- **sections**: 3–7 sections that the final report should contain. First is typically "TL;DR". Think about what the reader actually needs, not what's easy to fill.
-- **questions**: 3–6 focused research questions. Each question should be investigable independently (will be run in parallel).
-- Titles should be specific ("How does verl handle rollout scaling?"), not vague ("Background on verl").
-- If the user's goal is narrow or trivial (e.g. "what day is today"), produce 1 question and 2 sections — don't over-engineer.
-
-Output JSON must parse exactly. Don't add trailing commas or comments.`;
+- 3–7 sections. 3–6 questions. Each question independently investigable.
+- If the goal is narrow/trivial, produce 1 question and 2 sections.
+- Specific titles ("How does verl handle rollout?"), not vague ("Background").
+- Valid JSON only.`;
 }
 
 // ---------------------------------------------------------------------------
-// 2. RESEARCH — investigate a single question, produce findings
+// 2. RESEARCH — investigate ONE question. Budget: 300-800 words.
 // ---------------------------------------------------------------------------
 export function researchPrompt(opts: {
   goal: string;
   question: { id: string; title: string; approach: string };
   context: string;
 }): string {
-  return `# Research thread: ${opts.question.id}
+  return `# Research: ${opts.question.id} — ${opts.question.title}
 
-You are a research worker investigating ONE specific question in service of a larger research task. Another worker is handling other questions in parallel; a later phase will synthesize everything into a final report.
+Investigate this ONE question for a larger research task. Other workers handle other questions in parallel.
 
-## Overall research goal (for context only)
+## Overall goal (context only)
 
 ${opts.goal}
-${opts.context ? `\n## User-provided context\n\n${opts.context}\n` : ""}
+${opts.context ? `\n## Context\n\n${opts.context}\n` : ""}
 
-## Your focus question
+## Your question
 
 **${opts.question.title}**
 
-Approach hint: ${opts.question.approach}
+Approach: ${opts.question.approach}
 
-## Your output
+## Output rules
 
-Produce a **findings document** — your raw discoveries on this question. NOT a polished report section. Use Markdown.
-
-- Gather concrete facts, data, code/config examples, quotes, statistics
-- Include every URL you relied on with inline Markdown links \`[title](url)\`
-- Flag any information gaps or conflicting sources
-- Note which specific details belong in the final report's TL;DR if this question's findings warrant it
-- Cover depth, not breadth — go deep on this one question; don't drift into adjacent topics
-
-Aim for 300–1500 words. If you truly can't find solid info, say so explicitly with "## Unresolved" — don't fabricate.`;
+- Produce raw **findings**, NOT a polished report section.
+- Concrete facts, data, code examples, statistics. Cite URLs inline.
+- Flag gaps or conflicting sources under "## Unresolved".
+- **300–800 words max.** Be dense, not verbose. Every sentence should carry information.
+- Do NOT repeat the question or goal in your output.`;
 }
 
 // ---------------------------------------------------------------------------
-// 3. DRAFT — synthesize plan + findings into full report
+// Compress research findings for the draft phase
+// ---------------------------------------------------------------------------
+const MAX_FINDING_CHARS = 2000;
+
+export function compressFindings(
+  findings: { questionId: string; title: string; output: string }[]
+): { questionId: string; title: string; output: string }[] {
+  return findings.map((f) => {
+    if (f.output.length <= MAX_FINDING_CHARS) return f;
+
+    // Keep headings + first sentence per section + all bullet points + links
+    const lines = f.output.split("\n");
+    const kept: string[] = [];
+    let budget = MAX_FINDING_CHARS;
+    let afterHeading = false;
+
+    for (const line of lines) {
+      if (budget <= 0) break;
+      const trimmed = line.trim();
+
+      if (trimmed.startsWith("#")) {
+        kept.push(line);
+        budget -= line.length;
+        afterHeading = true;
+      } else if (afterHeading && trimmed.length > 0) {
+        kept.push(line);
+        budget -= line.length;
+        afterHeading = false;
+      } else if (
+        trimmed.startsWith("- ") ||
+        trimmed.startsWith("* ") ||
+        /^\d+\./.test(trimmed)
+      ) {
+        kept.push(line);
+        budget -= line.length;
+      } else if (trimmed.match(/\[.*?\]\(https?:\/\//)) {
+        kept.push(line);
+        budget -= line.length;
+      }
+    }
+
+    return {
+      ...f,
+      output: `[Condensed from ${f.output.length} chars]\n\n${kept.join("\n")}`,
+    };
+  });
+}
+
+// ---------------------------------------------------------------------------
+// 3. DRAFT — synthesize plan + compressed findings
 // ---------------------------------------------------------------------------
 export function draftPrompt(opts: {
   goal: string;
@@ -114,87 +153,71 @@ export function draftPrompt(opts: {
   findings: { questionId: string; title: string; output: string }[];
   language?: string;
 }): string {
-  const findingsBlock = opts.findings
+  // Compress findings before injecting
+  const compressed = compressFindings(opts.findings);
+  const findingsBlock = compressed
     .map(
-      (f) => `### Findings for ${f.questionId}: ${f.title}\n\n${f.output}`
+      (f) => `### ${f.questionId}: ${f.title}\n\n${f.output}`
     )
     .join("\n\n---\n\n");
 
   return `# Report drafting
 
-You are writing the FIRST DRAFT of a research report based on findings collected by parallel research workers.
+Write a research report from these findings.
 
-## Original goal
+## Goal
 
 ${opts.goal}
-${opts.context ? `\n## User-provided context\n\n${opts.context}\n` : ""}
+${opts.context ? `\n## Context\n\n${opts.context}\n` : ""}
 
 ## Planned sections
 
 ${opts.plan.sections.map((s) => `- ${s}`).join("\n")}
 
-## Raw findings from research phase
+## Research findings
 
 ${findingsBlock}
 
-## Your job
+## Instructions
 
-Produce the full report in Markdown. Follow the planned sections. Integrate findings naturally — synthesize, don't just concatenate. Preserve important citations from the findings (as inline Markdown links).
+Synthesize findings into the planned sections. Preserve citations. Don't just concatenate — integrate.
 
 ${styleGuide(opts.language)}`;
 }
 
 // ---------------------------------------------------------------------------
-// 4. CRITIQUE — self-critique of the draft
+// 4. CRITIQUE — budget: 300-500 words. Focused, not exhaustive.
 // ---------------------------------------------------------------------------
 export function critiquePrompt(opts: {
   goal: string;
   draft: string;
 }): string {
-  return `# Self-critique
+  return `# Critique this report draft
 
-You are acting as a **strict peer reviewer** of a research report draft. Your job is to find what's weak, not to praise it.
-
-## Original goal
+## Goal it should address
 
 ${opts.goal}
 
-## Draft to review
+## Draft
 
 ${opts.draft}
 
-## Your output
+## Output
 
-Produce a Markdown critique with these sections (skip sections that genuinely have no issues):
+Produce a **concise** critique (300–500 words max). Focus on the top issues only:
 
-### Content gaps
-- What important aspects of the goal are missing, under-developed, or glossed over?
+1. **Content gaps** — what important aspects are missing?
+2. **Weak claims** — which assertions lack evidence?
+3. **Structure** — does the TL;DR actually summarize? Redundant sections?
+4. **Citations** — missing or suspicious?
 
-### Weak claims
-- Which assertions lack evidence, citations, or specificity?
-- Which claims feel hand-wavy, clichéd, or AI-generated?
+End with a **numbered priority fix list** (top 3–5 changes only). Skip categories with no real issues.
 
-### Structural issues
-- Is the TL;DR actually the TL;DR, or does it bury the lede?
-- Are sections in a logical order? Redundant sections?
-- Does any section need splitting or merging?
-
-### Clarity / tone
-- Any passages that read conversational, self-referential, or like filler?
-- Overused hedge language ("it depends", "various factors") that should be replaced with concrete answers?
-
-### Citation / accuracy
-- Missing or suspicious citations?
-- Any factual claims likely wrong that should be double-checked?
-
-### Prioritized fix list
-- Number the top 3–8 concrete changes that would most improve this report, in priority order.
-
-Be direct. A perfect draft is rare — assume there are real issues to find.`;
+Be direct and specific. Don't pad with praise.`;
 }
 
 // ---------------------------------------------------------------------------
-// 5. REVISE — incorporate critique into final report
+// 5. REVISE — incorporate critique
 // ---------------------------------------------------------------------------
 export function revisePrompt(opts: {
   goal: string;
@@ -206,41 +229,36 @@ export function revisePrompt(opts: {
 }): string {
   const toolsetsBlock =
     opts.toolsets.length > 0
-      ? `\n\nAvailable toolsets if needed for fact-checking: ${opts.toolsets.join(", ")}`
+      ? `\n\nYou may use these toolsets for fact-checking if needed: ${opts.toolsets.join(", ")}`
       : "";
+
   return `# Final revision
 
-You are producing the FINAL version of a research report by applying a critique to an earlier draft.
+Apply this critique to produce the final report.
 
-## Original goal
+## Goal
 
-${opts.goal}
-${opts.context ? `\n## User-provided context\n\n${opts.context}\n` : ""}${toolsetsBlock}
+${opts.goal}${toolsetsBlock}
 
-## Current draft
+## Draft
 
 ${opts.draft}
 
-## Critique to apply
+## Critique
 
 ${opts.critique}
 
-## Your job
+## Rules
 
-Produce the **final report** — complete Markdown, incorporating the critique's prioritized fix list. Address weak claims, fill content gaps, restructure if needed, tighten language.
-
-### Hard rules
-
-- Output ONLY the final report. Do NOT include a "changes applied" summary or meta-commentary.
-- Do NOT mention the critique or the fact that this is a revision.
-- The report should read as a freshly-written standalone document.
-- If the critique flagged a factual claim as suspicious, either fix it with a better source or remove it.
+- Output ONLY the final report. No meta-commentary about what changed.
+- Address the priority fix list. Strengthen weak claims or remove them.
+- The report must read as a standalone document.
 
 ${styleGuide(opts.language)}`;
 }
 
 // ---------------------------------------------------------------------------
-// Quick mode — single-call standalone report (no pipeline)
+// Quick mode — single call
 // ---------------------------------------------------------------------------
 export function directReportPrompt(opts: {
   goal: string;
@@ -270,14 +288,13 @@ export function directReportPrompt(opts: {
 }
 
 // ---------------------------------------------------------------------------
-// Followup — produce a new pipeline turn based on a revision request
+// Followup context
 // ---------------------------------------------------------------------------
 const MAX_PRIOR_REPORT_CHARS = 6000;
 
 function condensePriorReport(report: string): string {
   if (report.length <= MAX_PRIOR_REPORT_CHARS) return report;
 
-  // Extract headings + first sentence of each section as a structural summary
   const lines = report.split("\n");
   const summary: string[] = [];
   let charBudget = MAX_PRIOR_REPORT_CHARS;
@@ -285,28 +302,27 @@ function condensePriorReport(report: string): string {
   for (const line of lines) {
     if (charBudget <= 0) break;
     const trimmed = line.trim();
-    // Always keep headings
     if (trimmed.startsWith("#")) {
       summary.push(line);
       charBudget -= line.length;
-    }
-    // Keep first non-empty line after a heading (topic sentence)
-    else if (
+    } else if (
       summary.length > 0 &&
       summary[summary.length - 1].trim().startsWith("#") &&
       trimmed.length > 0
     ) {
       summary.push(line);
       charBudget -= line.length;
-    }
-    // Keep bullet points (they carry structure)
-    else if (trimmed.startsWith("- ") || trimmed.startsWith("* ") || /^\d+\./.test(trimmed)) {
+    } else if (
+      trimmed.startsWith("- ") ||
+      trimmed.startsWith("* ") ||
+      /^\d+\./.test(trimmed)
+    ) {
       summary.push(line);
       charBudget -= line.length;
     }
   }
 
-  return `[Condensed from ${report.length} chars — headings, topic sentences, and key points preserved]\n\n${summary.join("\n")}`;
+  return `[Condensed from ${report.length} chars]\n\n${summary.join("\n")}`;
 }
 
 export function followupContextPrompt(opts: {
@@ -315,18 +331,40 @@ export function followupContextPrompt(opts: {
 }): string {
   const condensed = condensePriorReport(opts.priorReport);
 
-  return `### Prior report outline (condensed for context — not visible to final reader)
+  return `### Prior report outline (condensed)
 
 ${condensed}
 
-### User's refinement request (INTERNAL — silently integrate, do not surface)
+### Refinement request (INTERNAL — do not surface)
 
 ${opts.followupMessage}
 
-Produce the next version of the report. Integrate the refinement request naturally. Do NOT acknowledge this is a revision; do NOT describe what changed.`;
+Integrate the refinement naturally. Do NOT acknowledge this is a revision.`;
 }
 
-// Parse plan JSON out of an LLM response ------------------------------------
+// ---------------------------------------------------------------------------
+// Followup type detection — is this a minor tweak or a major revision?
+// ---------------------------------------------------------------------------
+export function isMinorRefinement(message: string): boolean {
+  const lower = message.toLowerCase();
+  const minorPatterns = [
+    /fix\s+(typo|spelling|grammar|format)/,
+    /改\s*(错字|格式|排版)/,
+    /add\s+(a\s+)?link/,
+    /加个?(链接|引用)/,
+    /remove\s+(the\s+)?section/,
+    /删(除|掉).{0,10}(章节|部分|段落)/,
+    /rephrase/,
+    /reword/,
+    /换个说法/,
+    /改写.{0,10}(句|段)/,
+  ];
+  return minorPatterns.some((p) => p.test(lower));
+}
+
+// ---------------------------------------------------------------------------
+// Parse plan JSON
+// ---------------------------------------------------------------------------
 export function parsePlan(raw: string): Plan | null {
   const jsonBlock = raw.match(/```json\s*([\s\S]*?)```/i);
   const candidate = jsonBlock ? jsonBlock[1] : raw;
@@ -337,7 +375,6 @@ export function parsePlan(raw: string): Plan | null {
       Array.isArray(parsed.sections) &&
       Array.isArray(parsed.questions)
     ) {
-      // Normalize
       const sections: string[] = parsed.sections
         .filter((s: unknown) => typeof s === "string")
         .slice(0, 10);
@@ -347,14 +384,24 @@ export function parsePlan(raw: string): Plan | null {
             typeof q === "object" && q !== null && "title" in (q as object)
         )
         .slice(0, 8)
-        .map((q: { id?: string; title: string; approach?: string }, i: number) => ({
-          id: q.id || `Q${i + 1}`,
-          title: String(q.title),
-          approach: String(q.approach || "Search web and cite primary sources."),
-        }));
+        .map(
+          (
+            q: { id?: string; title: string; approach?: string },
+            i: number
+          ) => ({
+            id: q.id || `Q${i + 1}`,
+            title: String(q.title),
+            approach: String(
+              q.approach || "Search web and cite primary sources."
+            ),
+          })
+        );
       if (questions.length === 0) return null;
       return {
-        sections: sections.length > 0 ? sections : ["TL;DR", "Details", "References"],
+        sections:
+          sections.length > 0
+            ? sections
+            : ["TL;DR", "Details", "References"],
         questions,
       };
     }
