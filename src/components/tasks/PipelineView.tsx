@@ -81,7 +81,7 @@ function StageRow({ phases }: { phases: PhaseDetail[] }) {
             {phases.filter((p) => p.status === "completed").length}/{phases.length}
           </span>
         </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-1.5">
+        <div className="space-y-1.5">
           {phases.map((p) => (
             <PhaseRow key={p.id} phase={p} compact />
           ))}

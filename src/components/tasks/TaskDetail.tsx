@@ -128,9 +128,9 @@ export function TaskDetail() {
       <div onClick={closeTask} className="fixed inset-0 bg-black/60 z-40 animate-fade-in" />
       <div className="fixed top-0 right-0 bottom-0 w-[min(1100px,92vw)] bg-abyss border-l border-charcoal z-50 flex flex-col animate-slide-in">
         {/* Header */}
-        <div className="px-6 py-4 border-b border-charcoal flex items-start justify-between gap-4 shrink-0">
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-3 mb-2 flex-wrap">
+        <div className="px-6 py-4 border-b border-charcoal shrink-0">
+          <div className="flex items-center justify-between gap-3 mb-3">
+            <div className="flex items-center gap-3 flex-wrap min-w-0">
               <StatusBadge status={task.status} />
               {task.turnCount > 1 && (
                 <span className="text-[11px] font-mono text-emerald-signal">v{task.turnCount}</span>
@@ -144,34 +144,37 @@ export function TaskDetail() {
                 </span>
               )}
               <span className="text-[10px] font-mono text-slate-steel/50 px-1.5 py-0.5 rounded bg-carbon border border-charcoal-subtle">{task.mode}</span>
-
-              {/* Action buttons */}
-              <div className="flex items-center gap-2 ml-auto">
-                {task.result && (
-                  <>
-                    <button onClick={handleCopy} className="px-2.5 py-1 text-[11px] font-medium bg-carbon border border-charcoal rounded-md text-parchment hover:border-charcoal-light transition-colors">
-                      {copied ? "Copied" : "Copy MD"}
-                    </button>
-                    <button onClick={handleDownload} className="px-2.5 py-1 text-[11px] font-medium bg-carbon border border-charcoal rounded-md text-parchment hover:border-charcoal-light transition-colors">
-                      .md ↓
-                    </button>
-                  </>
-                )}
-                {task.status === "failed" && (
-                  <button onClick={() => retry(activeTaskId!)} className="px-2.5 py-1 text-[11px] font-medium bg-carbon border border-charcoal rounded-md text-warning hover:border-warning/30 transition-colors">
-                    Retry
-                  </button>
-                )}
-                {task.status === "running" && (
-                  <button onClick={() => cancel(activeTaskId!)} className="px-2.5 py-1 text-[11px] font-medium bg-danger-dim border border-danger/30 rounded-md text-danger hover:border-danger/50 transition-colors">
-                    Cancel
-                  </button>
-                )}
-              </div>
             </div>
-            <h2 className="text-lg font-semibold text-snow line-clamp-2 font-[family-name:var(--font-heading)] tracking-tight">
-              {task.goal}
-            </h2>
+
+            {/* Actions + close — aligned together */}
+            <div className="flex items-center gap-2 shrink-0">
+              {task.result && (
+                <>
+                  <button onClick={handleCopy} className="px-2.5 py-1 text-[11px] font-medium bg-carbon border border-charcoal rounded-md text-parchment hover:border-charcoal-light transition-colors">
+                    {copied ? "Copied" : "Copy MD"}
+                  </button>
+                  <button onClick={handleDownload} className="px-2.5 py-1 text-[11px] font-medium bg-carbon border border-charcoal rounded-md text-parchment hover:border-charcoal-light transition-colors">
+                    .md ↓
+                  </button>
+                </>
+              )}
+              {task.status === "failed" && (
+                <button onClick={() => retry(activeTaskId!)} className="px-2.5 py-1 text-[11px] font-medium bg-carbon border border-charcoal rounded-md text-warning hover:border-warning/30 transition-colors">
+                  Retry
+                </button>
+              )}
+              {task.status === "running" && (
+                <button onClick={() => cancel(activeTaskId!)} className="px-2.5 py-1 text-[11px] font-medium bg-danger-dim border border-danger/30 rounded-md text-danger hover:border-danger/50 transition-colors">
+                  Cancel
+                </button>
+              )}
+              <button onClick={closeTask} className="text-slate-steel hover:text-snow p-1 text-lg" title="Close (Esc)">✕</button>
+            </div>
+          </div>
+
+          <h2 className="text-lg font-semibold text-snow line-clamp-2 font-[family-name:var(--font-heading)] tracking-tight">
+            {task.goal}
+          </h2>
             {/* Tags + pin */}
             <div className="mt-2 flex items-center gap-2 flex-wrap">
               <button
@@ -222,8 +225,6 @@ export function TaskDetail() {
                 />
               </form>
             </div>
-          </div>
-          <button onClick={closeTask} className="text-slate-steel hover:text-snow shrink-0 p-1 text-lg" title="Close (Esc)">✕</button>
         </div>
 
         {/* Body */}
