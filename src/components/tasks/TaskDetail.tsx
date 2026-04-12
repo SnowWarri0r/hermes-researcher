@@ -39,6 +39,8 @@ export function TaskDetail() {
   const [viewingTurnSeq, setViewingTurnSeq] = useState<number | null>(null);
   const [copied, setCopied] = useState(false);
   const [tagInput, setTagInput] = useState("");
+  const [chainGoal, setChainGoal] = useState("");
+  const [chainSending, setChainSending] = useState(false);
 
   useEffect(() => {
     setFollowupMessage("");
@@ -108,6 +110,26 @@ export function TaskDetail() {
   const totalDuration = task.completedAt && task.createdAt
     ? ((task.completedAt - task.createdAt) / 1000).toFixed(1)
     : null;
+
+  async function handleChain() {
+    const g = chainGoal.trim();
+    if (!g || chainSending) return;
+    setChainSending(true);
+    try {
+      await fetch(`/api/tasks/${activeTaskId}/chain`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ goal: g }),
+      });
+      setChainGoal("");
+      // Refresh list to show the new chained task
+      useTaskStore.getState().refreshList();
+    } catch {
+      /* ignore */
+    } finally {
+      setChainSending(false);
+    }
+  }
 
   async function handleFollowup(e: React.FormEvent) {
     e.preventDefault();
@@ -294,6 +316,38 @@ export function TaskDetail() {
                     </button>
                   </div>
                 </form>
+              )}
+              {/* Chain next task */}
+              {isLatestTurn && canFollowup && task.result && (
+                <div className="mt-4 bg-carbon border border-charcoal rounded-lg p-4">
+                  <div className="text-xs font-medium text-slate-steel uppercase tracking-wider mb-2">
+                    Chain next task
+                  </div>
+                  <div className="text-[11px] text-slate-steel mb-2">
+                    Trigger a follow-up task that receives this report's output as context.
+                  </div>
+                  <div className="flex gap-2">
+                    <input
+                      value={chainGoal}
+                      onChange={(e) => setChainGoal(e.target.value)}
+                      placeholder="Next task goal..."
+                      className="flex-1 bg-abyss border border-charcoal rounded-md px-3 py-1.5 text-sm text-snow placeholder:text-slate-steel focus:outline-none focus:border-emerald-signal/50"
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          handleChain();
+                        }
+                      }}
+                    />
+                    <button
+                      onClick={handleChain}
+                      disabled={!chainGoal.trim() || chainSending}
+                      className="px-3 py-1.5 bg-carbon border border-charcoal rounded-md text-xs font-medium text-mint hover:border-emerald-signal/50 disabled:opacity-40 transition-colors shrink-0"
+                    >
+                      {chainSending ? "..." : "Chain"}
+                    </button>
+                  </div>
+                </div>
               )}
             </div>
 

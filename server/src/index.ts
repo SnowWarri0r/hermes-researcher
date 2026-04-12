@@ -9,6 +9,13 @@ import { resolve } from "node:path";
 import { store } from "./db.ts";
 import { hermesHealth } from "./hermes.ts";
 import {
+  loadSettings,
+  saveSettings,
+  getTemplates,
+  addTemplate,
+  deleteTemplate,
+} from "./settings.ts";
+import {
   runPipeline,
   subscribe,
   cancelTaskPhases,
@@ -17,6 +24,8 @@ import {
 import type {
   CreateTaskRequest,
   FollowupRequest,
+  ModelRouting,
+  TaskTemplate,
 } from "../../shared/types.ts";
 
 const app = new Hono();
@@ -156,6 +165,89 @@ app.delete("/api/tasks/:id", (c) => {
   return c.json({ ok: true });
 });
 
+// ---------------------------------------------------------------------------
+// Settings: model routing
+// ---------------------------------------------------------------------------
+app.get("/api/settings", (c) => {
+  return c.json(loadSettings());
+});
+
+app.patch("/api/settings", async (c) => {
+  const body = (await c.req.json()) as {
+    modelRouting?: ModelRouting;
+  };
+  const updated = saveSettings(body);
+  return c.json(updated);
+});
+
+// ---------------------------------------------------------------------------
+// Templates
+// ---------------------------------------------------------------------------
+app.get("/api/templates", (c) => {
+  return c.json(getTemplates());
+});
+
+app.post("/api/templates", async (c) => {
+  const body = (await c.req.json()) as Omit<TaskTemplate, "id" | "createdAt">;
+  const tpl: TaskTemplate = {
+    ...body,
+    id: `tpl_${randomUUID().replace(/-/g, "").slice(0, 12)}`,
+    variables: extractVariables(body.goal),
+    createdAt: Date.now(),
+  };
+  addTemplate(tpl);
+  return c.json(tpl, 201);
+});
+
+app.delete("/api/templates/:id", (c) => {
+  deleteTemplate(c.req.param("id"));
+  return c.json({ ok: true });
+});
+
+function extractVariables(goal: string): string[] {
+  const matches = goal.match(/\{(\w+)\}/g);
+  if (!matches) return [];
+  return [...new Set(matches.map((m) => m.slice(1, -1)))];
+}
+
+// ---------------------------------------------------------------------------
+// Knowledge base
+// ---------------------------------------------------------------------------
+app.get("/api/knowledge", (c) => {
+  const q = c.req.query("q")?.trim();
+  if (!q) return c.json([]);
+  return c.json(store.searchKnowledge(q, 10));
+});
+
+// ---------------------------------------------------------------------------
+// Task chains
+// ---------------------------------------------------------------------------
+app.post("/api/tasks/:id/chain", async (c) => {
+  const id = c.req.param("id");
+  const task = store.getTask(id);
+  if (!task) return c.json({ error: "not found" }, 404);
+
+  const body = (await c.req.json()) as {
+    goal: string;
+    contextMode?: "result" | "summary";
+  };
+  if (!body.goal?.trim()) {
+    return c.json({ error: "goal is required" }, 400);
+  }
+
+  const chainId = store.addChain({
+    parentTaskId: id,
+    goalTemplate: body.goal.trim(),
+    contextMode: body.contextMode ?? "result",
+    createdAt: Date.now(),
+  });
+
+  return c.json({ chainId, status: task.status === "completed" ? "will trigger immediately" : "pending" }, 201);
+});
+
+// ---------------------------------------------------------------------------
+// SSE
+// ---------------------------------------------------------------------------
 app.get("/api/tasks/:id/stream", (c) => {
   const id = c.req.param("id");
   const task = store.getTask(id);

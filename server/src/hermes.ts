@@ -23,11 +23,13 @@ export async function hermesHealth(): Promise<boolean> {
 // Runs API — independent sessions, full SSE tool events
 // Used for: research branches (parallel, need isolation)
 // ---------------------------------------------------------------------------
-export async function startHermesRun(input: string): Promise<string> {
+export async function startHermesRun(input: string, model?: string): Promise<string> {
+  const body: Record<string, unknown> = { input, store: true };
+  if (model) body.model = model;
   const res = await fetch(`${HERMES_ENDPOINT}/v1/runs`, {
     method: "POST",
     headers: headers(),
-    body: JSON.stringify({ input, store: true }),
+    body: JSON.stringify(body),
   });
   if (!res.ok) {
     throw new Error(`Hermes run failed: ${res.status} ${await res.text()}`);
@@ -139,6 +141,7 @@ export async function hermesChatStream(opts: {
 export async function hermesChat(opts: {
   message: string;
   sessionId?: string;
+  model?: string;
 }): Promise<{
   content: string;
   sessionId: string;
@@ -149,13 +152,15 @@ export async function hermesChat(opts: {
     h["X-Hermes-Session-Id"] = opts.sessionId;
   }
 
+  const body: Record<string, unknown> = {
+    messages: [{ role: "user", content: opts.message }],
+    stream: false,
+  };
+  if (opts.model) body.model = opts.model;
   const res = await fetch(`${HERMES_ENDPOINT}/v1/chat/completions`, {
     method: "POST",
     headers: h,
-    body: JSON.stringify({
-      messages: [{ role: "user", content: opts.message }],
-      stream: false,
-    }),
+    body: JSON.stringify(body),
   });
 
   if (!res.ok) {

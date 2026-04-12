@@ -1,9 +1,12 @@
+import crypto from "node:crypto";
 import { store, db } from "./db.ts";
 import {
   streamHermesEvents,
   startHermesRun,
   hermesChat,
 } from "./hermes.ts";
+import { getModelForPhase } from "./settings.ts";
+import { extractKnowledge, searchPriorKnowledge } from "./knowledge.ts";
 import {
   planPrompt,
   researchPrompt,
@@ -73,7 +76,8 @@ async function runPhase(opts: {
 }): Promise<{ output: string; usage?: TokenUsage }> {
   const { taskId, phaseId, kind, prompt } = opts;
 
-  const runId = await startHermesRun(prompt);
+  const model = getModelForPhase(kind);
+  const runId = await startHermesRun(prompt, model);
   store.markPhaseRunning(phaseId, runId);
 
   broadcast(taskId, {
@@ -173,9 +177,11 @@ async function runPhaseLite(opts: {
   });
 
   try {
+    const model = getModelForPhase(opts.kind);
     const result = await hermesChat({
       message: opts.prompt,
       sessionId: opts.sessionId,
+      model,
     });
 
     const completedAt = Date.now();
@@ -289,6 +295,10 @@ export async function runPipeline(opts: PipelineOpts): Promise<void> {
       event: "pipeline.completed",
       data: { turnId: opts.turnId, usage: totalUsage },
     });
+
+    // Post-completion: extract knowledge + trigger chains (non-blocking)
+    extractKnowledge(opts.taskId).catch(() => {});
+    triggerChains(opts.taskId).catch(() => {});
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     store.completeTurn({
@@ -520,14 +530,18 @@ async function runPlanAndResearch(
     createdAt: Date.now(),
   });
 
+  // Inject prior knowledge from knowledge base
+  const priorKnowledge = searchPriorKnowledge(goal);
+
   const planPromptText = isFollowup
     ? planPrompt({ goal, context, toolsets, language: opts.language }) +
+      priorKnowledge +
       "\n\n" +
       followupContextPrompt({
         priorReport: opts.priorReport!,
         followupMessage: opts.followupMessage!,
       })
-    : planPrompt({ goal, context, toolsets, language: opts.language });
+    : planPrompt({ goal, context, toolsets, language: opts.language }) + priorKnowledge;
 
   // Plan doesn't need tools — use lightweight chat completions
   const planResult = await runPhaseLite({
@@ -580,6 +594,61 @@ async function runPlanAndResearch(
   researchResults.forEach((r) => usages.push(r.usage));
 
   return { plan, researchResults };
+}
+
+// ---------------------------------------------------------------------------
+// Task chains: trigger child tasks when parent completes
+// ---------------------------------------------------------------------------
+async function triggerChains(parentTaskId: string): Promise<void> {
+  const chains = store.getPendingChains(parentTaskId);
+  if (chains.length === 0) return;
+
+  const parent = store.getTask(parentTaskId);
+  if (!parent || !parent.result) return;
+
+  for (const chain of chains) {
+    const childContext =
+      chain.contextMode === "summary"
+        ? parent.result.slice(0, 3000) // abbreviated
+        : parent.result;
+
+    const childGoal = chain.goalTemplate;
+    const childId = `task_${crypto.randomUUID().replace(/-/g, "")}`;
+    const createdAt = Date.now();
+
+    store.createTask({
+      id: childId,
+      goal: childGoal,
+      context: `Based on prior research:\n\n${childContext}`,
+      toolsets: parent.toolsets,
+      mode: parent.mode,
+      language: parent.language,
+      createdAt,
+    });
+
+    const turn = store.addTurn({
+      taskId: childId,
+      userMessage: childGoal,
+      createdAt,
+    });
+
+    store.markChainTriggered(chain.id, childId);
+
+    broadcast(parentTaskId, {
+      event: "chain.triggered",
+      data: { chainId: chain.id, childTaskId: childId },
+    });
+
+    runPipeline({
+      taskId: childId,
+      turnId: turn.id,
+      goal: childGoal,
+      context: `Based on prior research:\n\n${childContext}`,
+      toolsets: parent.toolsets,
+      mode: parent.mode,
+      language: parent.language,
+    }).catch(() => {});
+  }
 }
 
 // ---------------------------------------------------------------------------

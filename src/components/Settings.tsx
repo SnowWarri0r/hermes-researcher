@@ -1,10 +1,39 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useTaskStore } from "../store/tasks";
 import { checkHealth } from "../api/client";
+import type { ModelRouting, TaskTemplate, TaskMode } from "../types";
+import { TASK_MODE_META } from "../types";
+
+const API = "/api";
+
+const PHASE_LABELS: { key: keyof ModelRouting; label: string; hint: string }[] = [
+  { key: "plan", label: "Plan", hint: "Cheap/fast — text only, no tools" },
+  { key: "research", label: "Research", hint: "Strong — needs web/browser tools" },
+  { key: "draft", label: "Draft", hint: "Strong — synthesizes findings" },
+  { key: "critique", label: "Critique", hint: "Cheap/fast — text review only" },
+  { key: "revise", label: "Revise", hint: "Strong — final output quality" },
+];
 
 export function Settings() {
   const connected = useTaskStore((s) => s.connected);
   const setConnected = useTaskStore((s) => s.setConnected);
+
+  return (
+    <div className="max-w-2xl space-y-8">
+      <ConnectionSection connected={connected} setConnected={setConnected} />
+      <ModelRoutingSection />
+      <TemplatesSection />
+    </div>
+  );
+}
+
+function ConnectionSection({
+  connected,
+  setConnected,
+}: {
+  connected: boolean;
+  setConnected: (c: boolean) => void;
+}) {
   const [testing, setTesting] = useState(false);
 
   async function handleTest() {
@@ -15,26 +44,22 @@ export function Settings() {
   }
 
   return (
-    <div className="max-w-lg">
-      <h2 className="text-lg font-semibold text-snow mb-6 font-[family-name:var(--font-heading)] tracking-tight">
+    <div>
+      <h2 className="text-lg font-semibold text-snow mb-4 font-[family-name:var(--font-heading)] tracking-tight">
         Connection
       </h2>
-
       <div className="bg-carbon border border-charcoal rounded-lg p-5">
         <div className="flex items-center justify-between mb-4">
           <div>
             <div className="text-sm font-medium text-snow">Backend</div>
             <div className="text-xs text-slate-steel mt-0.5 font-mono">
-              http://127.0.0.1:8787
+              http://127.0.0.1:8787 → hermes:8642
             </div>
           </div>
-          <span
-            className={`text-xs font-medium ${connected ? "text-success" : "text-danger"}`}
-          >
+          <span className={`text-xs font-medium ${connected ? "text-success" : "text-danger"}`}>
             {connected ? "● connected" : "○ offline"}
           </span>
         </div>
-
         <button
           onClick={handleTest}
           disabled={testing}
@@ -43,31 +68,234 @@ export function Settings() {
           {testing ? "Testing..." : "Test Connection"}
         </button>
       </div>
+    </div>
+  );
+}
 
-      <div className="mt-6 bg-abyss border border-charcoal rounded-lg p-4">
-        <div className="text-xs font-medium text-slate-steel mb-2 uppercase tracking-wider">
-          How it works
+function ModelRoutingSection() {
+  const [routing, setRouting] = useState<ModelRouting | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    fetch(`${API}/settings`)
+      .then((r) => r.json())
+      .then((d) => setRouting(d.modelRouting))
+      .catch(() => {});
+  }, []);
+
+  async function save() {
+    if (!routing) return;
+    setSaving(true);
+    await fetch(`${API}/settings`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ modelRouting: routing }),
+    });
+    setSaving(false);
+  }
+
+  if (!routing) return null;
+
+  return (
+    <div>
+      <h2 className="text-lg font-semibold text-snow mb-4 font-[family-name:var(--font-heading)] tracking-tight">
+        Model Routing
+      </h2>
+      <div className="bg-carbon border border-charcoal rounded-lg p-5 space-y-3">
+        <div className="text-xs text-slate-steel mb-2">
+          Leave empty to use hermes default model. Use model IDs like <span className="font-mono text-mint">google/gemini-2.5-flash</span> for cheap phases.
         </div>
-        <div className="text-[12px] text-parchment space-y-2 leading-relaxed">
-          <p>
-            This dashboard talks to a local middleware at port <span className="font-mono text-mint">8787</span> which
-            persists all tasks to <span className="font-mono text-mint">~/.hermes-dashboard/tasks.db</span>.
-          </p>
-          <p>
-            The middleware proxies to the Hermes API server at <span className="font-mono text-mint">127.0.0.1:8642</span> using{" "}
-            <span className="font-mono text-mint">HERMES_API_KEY</span> from its environment.
-          </p>
-        </div>
+        {PHASE_LABELS.map((p) => (
+          <div key={String(p.key)} className="flex items-center gap-3">
+            <div className="w-20 shrink-0">
+              <div className="text-xs font-medium text-snow">{p.label}</div>
+              <div className="text-[10px] text-slate-steel">{p.hint}</div>
+            </div>
+            <input
+              type="text"
+              value={routing[p.key]}
+              onChange={(e) =>
+                setRouting({ ...routing, [p.key]: e.target.value })
+              }
+              placeholder="hermes default"
+              className="flex-1 bg-abyss border border-charcoal rounded-md px-3 py-1.5 text-xs text-snow placeholder:text-slate-steel/50 font-mono focus:outline-none focus:border-emerald-signal/50"
+            />
+          </div>
+        ))}
+        <button
+          onClick={save}
+          disabled={saving}
+          className="mt-2 px-4 py-1.5 bg-carbon border border-charcoal rounded-md text-xs font-medium text-mint hover:border-emerald-signal/50 disabled:opacity-40 transition-colors"
+        >
+          {saving ? "Saving..." : "Save"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function TemplatesSection() {
+  const [templates, setTemplates] = useState<TaskTemplate[]>([]);
+  const [showForm, setShowForm] = useState(false);
+  const [name, setName] = useState("");
+  const [description, setDescription] = useState("");
+  const [goal, setGoal] = useState("");
+  const [context, setContext] = useState("");
+  const [mode, setMode] = useState<TaskMode>("deep");
+
+  useEffect(() => {
+    fetch(`${API}/templates`)
+      .then((r) => r.json())
+      .then(setTemplates)
+      .catch(() => {});
+  }, []);
+
+  async function handleCreate(e: React.FormEvent) {
+    e.preventDefault();
+    if (!name.trim() || !goal.trim()) return;
+    const res = await fetch(`${API}/templates`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: name.trim(),
+        description: description.trim(),
+        goal: goal.trim(),
+        context: context.trim(),
+        toolsets: [],
+        mode,
+        language: "",
+        variables: [],
+      }),
+    });
+    const tpl = await res.json();
+    setTemplates([...templates, tpl]);
+    setName("");
+    setDescription("");
+    setGoal("");
+    setContext("");
+    setShowForm(false);
+  }
+
+  async function handleDelete(id: string) {
+    await fetch(`${API}/templates/${id}`, { method: "DELETE" });
+    setTemplates(templates.filter((t) => t.id !== id));
+  }
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-4">
+        <h2 className="text-lg font-semibold text-snow font-[family-name:var(--font-heading)] tracking-tight">
+          Templates
+        </h2>
+        <button
+          onClick={() => setShowForm(!showForm)}
+          className="text-xs text-mint hover:text-emerald-signal transition-colors"
+        >
+          {showForm ? "Cancel" : "+ New template"}
+        </button>
       </div>
 
-      <div className="mt-6 bg-abyss border border-charcoal rounded-lg p-4">
-        <div className="text-xs font-medium text-slate-steel mb-2 uppercase tracking-wider">
-          Start middleware
+      {showForm && (
+        <form
+          onSubmit={handleCreate}
+          className="bg-carbon border border-charcoal rounded-lg p-4 mb-4 space-y-3"
+        >
+          <input
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="Template name"
+            className="w-full bg-abyss border border-charcoal rounded-md px-3 py-2 text-sm text-snow placeholder:text-slate-steel focus:outline-none focus:border-emerald-signal/50"
+          />
+          <input
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            placeholder="Short description"
+            className="w-full bg-abyss border border-charcoal rounded-md px-3 py-2 text-xs text-snow placeholder:text-slate-steel focus:outline-none focus:border-emerald-signal/50"
+          />
+          <textarea
+            value={goal}
+            onChange={(e) => setGoal(e.target.value)}
+            placeholder="Goal template — use {variable} for placeholders, e.g. 'Competitive analysis of {product} vs {competitor}'"
+            rows={2}
+            className="w-full bg-abyss border border-charcoal rounded-md px-3 py-2 text-sm text-snow placeholder:text-slate-steel focus:outline-none focus:border-emerald-signal/50 resize-none"
+          />
+          <textarea
+            value={context}
+            onChange={(e) => setContext(e.target.value)}
+            placeholder="Default context (optional)"
+            rows={2}
+            className="w-full bg-abyss border border-charcoal rounded-md px-3 py-2 text-xs text-snow placeholder:text-slate-steel focus:outline-none focus:border-emerald-signal/50 resize-none"
+          />
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-slate-steel">Mode:</span>
+            {(["quick", "standard", "deep"] as TaskMode[]).map((m) => (
+              <button
+                key={m}
+                type="button"
+                onClick={() => setMode(m)}
+                className={`px-2 py-0.5 rounded text-[11px] font-medium border transition-colors ${
+                  mode === m
+                    ? "bg-emerald-dim border-emerald-signal/50 text-emerald-signal"
+                    : "bg-carbon border-charcoal text-slate-steel"
+                }`}
+              >
+                {TASK_MODE_META[m].label}
+              </button>
+            ))}
+          </div>
+          <button
+            type="submit"
+            disabled={!name.trim() || !goal.trim()}
+            className="px-4 py-1.5 bg-carbon border border-charcoal rounded-md text-xs font-medium text-mint hover:border-emerald-signal/50 disabled:opacity-40 transition-colors"
+          >
+            Create
+          </button>
+        </form>
+      )}
+
+      {templates.length === 0 && !showForm && (
+        <div className="text-xs text-slate-steel/60 text-center py-6">
+          No templates yet. Create one to save common research patterns.
         </div>
-        <pre className="text-[11px] text-parchment font-mono bg-carbon px-3 py-2 rounded-md border border-charcoal-subtle overflow-x-auto">
-{`cd server
-HERMES_API_KEY=... pnpm dev`}
-        </pre>
+      )}
+
+      <div className="space-y-2">
+        {templates.map((tpl) => (
+          <div
+            key={tpl.id}
+            className="bg-carbon border border-charcoal rounded-lg px-4 py-3 flex items-start justify-between gap-3"
+          >
+            <div className="min-w-0">
+              <div className="text-sm font-medium text-snow">{tpl.name}</div>
+              {tpl.description && (
+                <div className="text-xs text-slate-steel mt-0.5">
+                  {tpl.description}
+                </div>
+              )}
+              <div className="text-[11px] text-parchment font-mono mt-1 truncate">
+                {tpl.goal}
+              </div>
+              {tpl.variables.length > 0 && (
+                <div className="flex gap-1 mt-1.5">
+                  {tpl.variables.map((v: string) => (
+                    <span
+                      key={v}
+                      className="text-[10px] px-1.5 py-0.5 rounded bg-info-dim text-info border border-info/20 font-mono"
+                    >
+                      {`{${v}}`}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+            <button
+              onClick={() => handleDelete(tpl.id)}
+              className="text-slate-steel hover:text-danger text-xs shrink-0"
+            >
+              ✕
+            </button>
+          </div>
+        ))}
       </div>
     </div>
   );
