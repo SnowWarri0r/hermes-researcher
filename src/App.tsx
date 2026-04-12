@@ -6,6 +6,7 @@ import { TaskDetail } from "./components/tasks/TaskDetail";
 import { Settings } from "./components/Settings";
 import { useTaskStore, startPolling } from "./store/tasks";
 import { checkHealth } from "./api/client";
+import { requestNotificationPermission } from "./hooks/useNotification";
 
 type View = "tasks" | "settings";
 
@@ -23,6 +24,7 @@ export function App() {
     pollHealth();
     refreshList();
     startPolling();
+    requestNotificationPermission();
     const interval = setInterval(pollHealth, 15000);
     return () => clearInterval(interval);
   }, [pollHealth, refreshList]);

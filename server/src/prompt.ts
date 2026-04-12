@@ -1,14 +1,20 @@
 import type { Plan } from "../../shared/types.ts";
 
-const REPORT_STYLE_GUIDE = `## Style rules
+function styleGuide(language?: string): string {
+  const langRule = language
+    ? `\n- **Write the ENTIRE report in ${language}.** All headings, prose, labels, and descriptions must be in ${language}. Code, URLs, and proper nouns stay as-is.`
+    : "";
 
-- Produce a **standalone research report**, not a conversational reply.
+  return `## Style rules
+
+- Produce a **standalone research report**, not a conversational reply.${langRule}
 - Do not address the reader directly ("you", "your", "let me know"). Write in third person.
 - Do not offer follow-ups, apologize for limitations, or narrate your process.
 - Do not include a closing sign-off.
 - Use Markdown: \`##\` / \`###\` headings, bullet / numbered lists, tables, fenced code blocks with language tags.
 - Lead with a "## TL;DR" section (1–3 sentences of key findings), then detailed sections.
 - Cite sources inline with Markdown links when making specific claims.`;
+}
 
 // ---------------------------------------------------------------------------
 // 1. PLAN — produce structured research plan as JSON
@@ -17,6 +23,7 @@ export function planPrompt(opts: {
   goal: string;
   context: string;
   toolsets: string[];
+  language?: string;
 }): string {
   const toolsetsBlock =
     opts.toolsets.length > 0
@@ -105,6 +112,7 @@ export function draftPrompt(opts: {
   context: string;
   plan: Plan;
   findings: { questionId: string; title: string; output: string }[];
+  language?: string;
 }): string {
   const findingsBlock = opts.findings
     .map(
@@ -133,7 +141,7 @@ ${findingsBlock}
 
 Produce the full report in Markdown. Follow the planned sections. Integrate findings naturally — synthesize, don't just concatenate. Preserve important citations from the findings (as inline Markdown links).
 
-${REPORT_STYLE_GUIDE}`;
+${styleGuide(opts.language)}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -194,6 +202,7 @@ export function revisePrompt(opts: {
   draft: string;
   critique: string;
   toolsets: string[];
+  language?: string;
 }): string {
   const toolsetsBlock =
     opts.toolsets.length > 0
@@ -227,7 +236,7 @@ Produce the **final report** — complete Markdown, incorporating the critique's
 - The report should read as a freshly-written standalone document.
 - If the critique flagged a factual claim as suspicious, either fix it with a better source or remove it.
 
-${REPORT_STYLE_GUIDE}`;
+${styleGuide(opts.language)}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -237,6 +246,7 @@ export function directReportPrompt(opts: {
   goal: string;
   context: string;
   toolsets: string[];
+  language?: string;
   priorReport?: string;
   followupMessage?: string;
 }): string {
@@ -255,7 +265,7 @@ export function directReportPrompt(opts: {
     p += `\n\n## Hard rules\n\n- Output the full new report.\n- Do NOT acknowledge this is a revision.`;
   }
 
-  p += `\n\n${REPORT_STYLE_GUIDE}`;
+  p += `\n\n${styleGuide(opts.language)}`;
   return p;
 }
 

@@ -172,6 +172,7 @@ interface PipelineOpts {
   context: string;
   toolsets: string[];
   mode: TaskMode;
+  language?: string;
   priorReport?: string;
   followupMessage?: string;
 }
@@ -246,6 +247,7 @@ async function runQuickMode(
       goal: opts.goal,
       context: opts.context,
       toolsets: opts.toolsets,
+      language: opts.language,
       priorReport: opts.priorReport,
       followupMessage: opts.followupMessage,
     }),
@@ -282,6 +284,7 @@ async function runStandardMode(
         title: r.question.title,
         output: r.output,
       })),
+      language: opts.language,
     }),
   });
   usages.push(result.usage);
@@ -315,6 +318,7 @@ async function runDeepMode(
         title: r.question.title,
         output: r.output,
       })),
+      language: opts.language,
     }),
   });
   usages.push(draftResult.usage);
@@ -351,6 +355,7 @@ async function runDeepMode(
       draft: draftResult.output,
       critique: critiqueResult.output,
       toolsets: opts.toolsets,
+      language: opts.language,
     }),
   });
   usages.push(reviseResult.usage);
@@ -382,13 +387,13 @@ async function runPlanAndResearch(
   });
 
   const planPromptText = isFollowup
-    ? planPrompt({ goal, context, toolsets }) +
+    ? planPrompt({ goal, context, toolsets, language: opts.language }) +
       "\n\n" +
       followupContextPrompt({
         priorReport: opts.priorReport!,
         followupMessage: opts.followupMessage!,
       })
-    : planPrompt({ goal, context, toolsets });
+    : planPrompt({ goal, context, toolsets, language: opts.language });
 
   const planResult = await runPhase({
     taskId,

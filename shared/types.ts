@@ -82,12 +82,19 @@ export interface TurnDetail extends Turn {
   phases: PhaseDetail[];
 }
 
+export interface PipelineProgress {
+  current: string;   // label of currently running phase
+  done: number;
+  total: number;
+}
+
 export interface Task {
   id: string;
   goal: string;
   context: string;
   toolsets: string[];
   mode: TaskMode;
+  language: string;
   createdAt: number;
   status: TaskStatus;
   result: string;
@@ -95,6 +102,7 @@ export interface Task {
   completedAt?: number;
   usage?: TokenUsage;
   turnCount: number;
+  progress?: PipelineProgress;
 }
 
 export interface TaskDetail extends Task {
@@ -106,6 +114,7 @@ export interface CreateTaskRequest {
   context?: string;
   toolsets?: string[];
   mode?: TaskMode;
+  language?: string;
 }
 
 export interface FollowupRequest {

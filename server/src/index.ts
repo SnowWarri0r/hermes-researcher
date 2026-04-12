@@ -1,8 +1,11 @@
 import { Hono } from "hono";
 import { serve } from "@hono/node-server";
+import { serveStatic } from "@hono/node-server/serve-static";
 import { cors } from "hono/cors";
 import { streamSSE } from "hono/streaming";
 import { randomUUID } from "node:crypto";
+import { existsSync } from "node:fs";
+import { resolve } from "node:path";
 import { store } from "./db.ts";
 import { hermesHealth } from "./hermes.ts";
 import {
@@ -58,11 +61,12 @@ app.post("/api/tasks", async (c) => {
   const context = (body.context ?? "").trim();
   const toolsets = body.toolsets ?? [];
   const mode = body.mode ?? "deep";
+  const language = (body.language ?? "").trim();
 
   const taskId = `task_${randomUUID().replace(/-/g, "")}`;
   const createdAt = Date.now();
 
-  store.createTask({ id: taskId, goal, context, toolsets, mode, createdAt });
+  store.createTask({ id: taskId, goal, context, toolsets, mode, language, createdAt });
   const turn = store.addTurn({
     taskId,
     userMessage: goal,
@@ -76,6 +80,7 @@ app.post("/api/tasks", async (c) => {
     context,
     toolsets,
     mode,
+    language: language || undefined,
   }).catch(() => {
     /* errors already persisted & broadcast */
   });
@@ -113,6 +118,7 @@ app.post("/api/tasks/:id/followup", async (c) => {
     context: task.context,
     toolsets: task.toolsets,
     mode: task.mode,
+    language: task.language || undefined,
     priorReport,
     followupMessage,
   }).catch(() => {
@@ -185,6 +191,19 @@ app.get("/api/tasks/:id/stream", (c) => {
     }
   });
 });
+
+// Serve frontend static files in production (when ../dist exists)
+const distPath = resolve(import.meta.dirname, "../../dist");
+if (existsSync(distPath)) {
+  app.use("/*", serveStatic({ root: distPath }));
+  // SPA fallback: serve index.html for non-API, non-file routes
+  app.get("*", async (c) => {
+    if (c.req.path.startsWith("/api")) return c.notFound();
+    const { readFileSync } = await import("node:fs");
+    const html = readFileSync(resolve(distPath, "index.html"), "utf-8");
+    return c.html(html);
+  });
+}
 
 const PORT = Number(process.env.PORT ?? 8787);
 const HOST = process.env.HOST ?? "0.0.0.0";
