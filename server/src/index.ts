@@ -206,10 +206,17 @@ app.delete("/api/templates/:id", (c) => {
 // ---------------------------------------------------------------------------
 // Knowledge base
 // ---------------------------------------------------------------------------
+import { listAllKnowledge, deleteKnowledgeEntry } from "./knowledge.ts";
+
 app.get("/api/knowledge", (c) => {
   const q = c.req.query("q")?.trim();
-  if (!q) return c.json([]);
-  return c.json(store.searchKnowledge(q, 10));
+  if (q) return c.json(store.searchKnowledge(q, 10));
+  return c.json(listAllKnowledge());
+});
+
+app.delete("/api/knowledge/:id", (c) => {
+  deleteKnowledgeEntry(Number(c.req.param("id")));
+  return c.json({ ok: true });
 });
 
 // ---------------------------------------------------------------------------

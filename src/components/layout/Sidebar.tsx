@@ -1,6 +1,6 @@
 import { useTaskStore } from "../../store/tasks";
 
-type View = "tasks" | "settings";
+type View = "tasks" | "knowledge" | "settings";
 
 export function Sidebar({
   view,
@@ -44,6 +44,22 @@ export function Sidebar({
                 strokeWidth="1.5"
                 strokeLinecap="round"
               />
+            </svg>
+          }
+        />
+        <SidebarItem
+          label="Knowledge"
+          active={view === "knowledge"}
+          onClick={() => onViewChange("knowledge")}
+          icon={
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+              <path
+                d="M2 3h12M2 7h8M2 11h10"
+                stroke="currentColor"
+                strokeWidth="1.5"
+                strokeLinecap="round"
+              />
+              <circle cx="13" cy="11" r="2" stroke="currentColor" strokeWidth="1.2" />
             </svg>
           }
         />

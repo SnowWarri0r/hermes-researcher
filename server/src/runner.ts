@@ -6,7 +6,11 @@ import {
   hermesChat,
 } from "./hermes.ts";
 import { getModelForPhase } from "./settings.ts";
-import { extractKnowledge, searchPriorKnowledge } from "./knowledge.ts";
+import {
+  extractKnowledge,
+  searchPriorKnowledge,
+  extractPhaseKnowledge,
+} from "./knowledge.ts";
 import {
   planPrompt,
   researchPrompt,
@@ -592,6 +596,11 @@ async function runPlanAndResearch(
     )
   );
   researchResults.forEach((r) => usages.push(r.usage));
+
+  // Extract knowledge from each research branch (non-blocking)
+  for (const r of researchResults) {
+    extractPhaseKnowledge(taskId, r.question.title, r.output).catch(() => {});
+  }
 
   return { plan, researchResults };
 }

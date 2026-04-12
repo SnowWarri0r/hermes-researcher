@@ -4,11 +4,12 @@ import { TaskCreator } from "./components/tasks/TaskCreator";
 import { TaskList } from "./components/tasks/TaskList";
 import { TaskDetail } from "./components/tasks/TaskDetail";
 import { Settings } from "./components/Settings";
+import { Knowledge } from "./components/Knowledge";
 import { useTaskStore, startPolling } from "./store/tasks";
 import { checkHealth } from "./api/client";
 import { requestNotificationPermission } from "./hooks/useNotification";
 
-type View = "tasks" | "settings";
+type View = "tasks" | "knowledge" | "settings";
 
 export function App() {
   const [view, setView] = useState<View>("tasks");
@@ -39,6 +40,8 @@ export function App() {
               <TaskCreator />
               <TaskList />
             </div>
+          ) : view === "knowledge" ? (
+            <Knowledge />
           ) : (
             <div className="max-w-3xl mx-auto">
               <Settings />
