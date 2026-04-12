@@ -77,6 +77,18 @@ export async function sendFollowup(
   return res.json();
 }
 
+export async function patchTask(
+  id: string,
+  patch: { tags?: string[]; pinned?: boolean }
+): Promise<void> {
+  const res = await fetch(`${API_BASE}/tasks/${id}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(patch),
+  });
+  if (!res.ok) throw new Error(`patch failed: ${res.status}`);
+}
+
 export async function deleteTask(id: string): Promise<void> {
   const res = await fetch(`${API_BASE}/tasks/${id}`, { method: "DELETE" });
   if (!res.ok) throw new Error(`deleteTask failed: ${res.status}`);

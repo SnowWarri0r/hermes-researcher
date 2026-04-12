@@ -26,7 +26,7 @@ app.use(
   cors({
     origin: (origin) => origin ?? "*",
     allowHeaders: ["Content-Type", "Authorization"],
-    allowMethods: ["GET", "POST", "DELETE"],
+    allowMethods: ["GET", "POST", "PATCH", "DELETE"],
     credentials: true,
   })
 );
@@ -126,6 +126,21 @@ app.post("/api/tasks/:id/followup", async (c) => {
   });
 
   return c.json(store.getTask(id), 201);
+});
+
+app.patch("/api/tasks/:id", async (c) => {
+  const id = c.req.param("id");
+  const body = (await c.req.json()) as {
+    tags?: string[];
+    pinned?: boolean;
+  };
+  const task = store.getTask(id);
+  if (!task) return c.json({ error: "not found" }, 404);
+
+  if (body.tags !== undefined) store.setTags(id, body.tags);
+  if (body.pinned !== undefined) store.setPinned(id, body.pinned);
+
+  return c.json(store.getTask(id));
 });
 
 app.post("/api/tasks/:id/cancel", (c) => {

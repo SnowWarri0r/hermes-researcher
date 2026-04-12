@@ -34,6 +34,8 @@ db.exec(`
     toolsets    TEXT NOT NULL DEFAULT '[]',
     mode        TEXT NOT NULL DEFAULT 'deep',
     language    TEXT NOT NULL DEFAULT '',
+    tags        TEXT NOT NULL DEFAULT '[]',
+    pinned      INTEGER NOT NULL DEFAULT 0,
     created_at  INTEGER NOT NULL
   );
 
@@ -100,6 +102,8 @@ interface TaskRow {
   toolsets: string;
   mode: string;
   language: string;
+  tags: string;
+  pinned: number;
   created_at: number;
 }
 
@@ -202,6 +206,8 @@ function composeTask(task: TaskRow, latest?: Turn, turnCount = 0): Task {
     toolsets: JSON.parse(task.toolsets),
     mode: (task.mode as TaskMode) || "deep",
     language: task.language || "",
+    tags: JSON.parse(task.tags || "[]"),
+    pinned: Boolean(task.pinned),
     createdAt: task.created_at,
     status: (latest?.status as TaskStatus) ?? "running",
     result: latest?.report ?? "",
@@ -222,14 +228,16 @@ const stmts = {
   ),
   selectTask: db.prepare(`SELECT * FROM tasks WHERE id = ?`),
   listTasks: db.prepare(
-    `SELECT * FROM tasks ORDER BY created_at DESC LIMIT ? OFFSET ?`
+    `SELECT * FROM tasks ORDER BY pinned DESC, created_at DESC LIMIT ? OFFSET ?`
   ),
   searchTasks: db.prepare(
-    `SELECT * FROM tasks WHERE goal LIKE ? ORDER BY created_at DESC LIMIT ? OFFSET ?`
+    `SELECT * FROM tasks WHERE goal LIKE ? ORDER BY pinned DESC, created_at DESC LIMIT ? OFFSET ?`
   ),
   countSearchTasks: db.prepare(
     `SELECT COUNT(*) AS c FROM tasks WHERE goal LIKE ?`
   ),
+  updateTags: db.prepare(`UPDATE tasks SET tags = ? WHERE id = ?`),
+  updatePinned: db.prepare(`UPDATE tasks SET pinned = ? WHERE id = ?`),
   countTasks: db.prepare(`SELECT COUNT(*) AS c FROM tasks`),
   deleteTask: db.prepare(`DELETE FROM tasks WHERE id = ?`),
 
@@ -490,6 +498,14 @@ export const store = {
       report: r.report,
       status: r.status,
     }));
+  },
+
+  setTags(id: string, tags: string[]) {
+    stmts.updateTags.run(JSON.stringify(tags), id);
+  },
+
+  setPinned(id: string, pinned: boolean) {
+    stmts.updatePinned.run(pinned ? 1 : 0, id);
   },
 
   deleteTask(id: string) {

@@ -8,6 +8,7 @@ import {
   sendFollowup as apiFollowup,
   subscribeToTask,
   cancelTask as apiCancel,
+  patchTask as apiPatch,
 } from "../api/client";
 import { sendNotification } from "../hooks/useNotification";
 
@@ -36,6 +37,8 @@ interface TaskStore {
   retry: (id: string) => Promise<void>;
   cancel: (id: string) => Promise<void>;
 
+  togglePin: (id: string) => Promise<void>;
+  setTags: (id: string, tags: string[]) => Promise<void>;
   openTask: (id: string) => Promise<void>;
   closeTask: () => void;
   removeTask: (id: string) => Promise<void>;
@@ -125,6 +128,20 @@ export const useTaskStore = create<TaskStore>()((set, get) => ({
     await apiCancel(id);
     await get().refreshActive();
     await get().refreshList();
+  },
+
+  async togglePin(id) {
+    const task = get().tasks.find((t) => t.id === id);
+    if (!task) return;
+    await apiPatch(id, { pinned: !task.pinned });
+    await get().refreshList();
+    if (get().activeTaskId === id) get().refreshActive();
+  },
+
+  async setTags(id, tags) {
+    await apiPatch(id, { tags });
+    await get().refreshList();
+    if (get().activeTaskId === id) get().refreshActive();
   },
 
   async openTask(id) {

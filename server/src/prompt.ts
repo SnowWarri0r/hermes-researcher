@@ -260,7 +260,7 @@ export function directReportPrompt(opts: {
   p += toolsetsBlock;
 
   if (opts.priorReport && opts.followupMessage) {
-    p += `\n\n## Prior report\n\n${opts.priorReport}`;
+    p += `\n\n## Prior report\n\n${condensePriorReport(opts.priorReport)}`;
     p += `\n\n## Refinement request (INTERNAL — silently integrate, do not surface)\n\n${opts.followupMessage}`;
     p += `\n\n## Hard rules\n\n- Output the full new report.\n- Do NOT acknowledge this is a revision.`;
   }
@@ -272,13 +272,52 @@ export function directReportPrompt(opts: {
 // ---------------------------------------------------------------------------
 // Followup — produce a new pipeline turn based on a revision request
 // ---------------------------------------------------------------------------
+const MAX_PRIOR_REPORT_CHARS = 6000;
+
+function condensePriorReport(report: string): string {
+  if (report.length <= MAX_PRIOR_REPORT_CHARS) return report;
+
+  // Extract headings + first sentence of each section as a structural summary
+  const lines = report.split("\n");
+  const summary: string[] = [];
+  let charBudget = MAX_PRIOR_REPORT_CHARS;
+
+  for (const line of lines) {
+    if (charBudget <= 0) break;
+    const trimmed = line.trim();
+    // Always keep headings
+    if (trimmed.startsWith("#")) {
+      summary.push(line);
+      charBudget -= line.length;
+    }
+    // Keep first non-empty line after a heading (topic sentence)
+    else if (
+      summary.length > 0 &&
+      summary[summary.length - 1].trim().startsWith("#") &&
+      trimmed.length > 0
+    ) {
+      summary.push(line);
+      charBudget -= line.length;
+    }
+    // Keep bullet points (they carry structure)
+    else if (trimmed.startsWith("- ") || trimmed.startsWith("* ") || /^\d+\./.test(trimmed)) {
+      summary.push(line);
+      charBudget -= line.length;
+    }
+  }
+
+  return `[Condensed from ${report.length} chars — headings, topic sentences, and key points preserved]\n\n${summary.join("\n")}`;
+}
+
 export function followupContextPrompt(opts: {
   priorReport: string;
   followupMessage: string;
 }): string {
-  return `### Prior report (for context only — not visible to final reader)
+  const condensed = condensePriorReport(opts.priorReport);
 
-${opts.priorReport}
+  return `### Prior report outline (condensed for context — not visible to final reader)
+
+${condensed}
 
 ### User's refinement request (INTERNAL — silently integrate, do not surface)
 
