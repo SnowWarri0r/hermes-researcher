@@ -1,0 +1,32 @@
+export type {
+  Task,
+  TaskDetail,
+  TaskEvent,
+  TaskMode,
+  TaskStatus,
+  TokenUsage,
+  Turn,
+  TurnDetail,
+  TurnStatus,
+  Phase,
+  PhaseDetail,
+  PhaseKind,
+  PhaseStatus,
+  Plan,
+  ResearchQuestion,
+  ListTasksResponse,
+  CreateTaskRequest,
+  FollowupRequest,
+} from "../../shared/types";
+export { TASK_MODE_META } from "../../shared/types";
+
+export const AVAILABLE_TOOLSETS = [
+  { id: "terminal", label: "Terminal", icon: ">" },
+  { id: "file", label: "File Ops", icon: "F" },
+  { id: "web", label: "Web Search", icon: "W" },
+  { id: "browser", label: "Browser", icon: "B" },
+  { id: "code_execution", label: "Code Exec", icon: "X" },
+  { id: "delegation", label: "Delegate", icon: "D" },
+  { id: "memory", label: "Memory", icon: "M" },
+  { id: "mcp", label: "MCP", icon: "P" },
+] as const;

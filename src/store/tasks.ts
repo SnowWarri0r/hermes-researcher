@@ -1,0 +1,224 @@
+import { create } from "zustand";
+import type { Task, TaskDetail, TaskMode } from "../types";
+import {
+  createTask as apiCreate,
+  deleteTask as apiDelete,
+  getTask as apiGet,
+  listTasks as apiList,
+  sendFollowup as apiFollowup,
+  subscribeToTask,
+  cancelTask as apiCancel,
+} from "../api/client";
+
+interface TaskStore {
+  tasks: Task[];
+  total: number;
+  loading: boolean;
+  connected: boolean;
+  searchQuery: string;
+  filterStatus: string;
+  activeTaskId: string | null;
+  activeTaskDetail: TaskDetail | null;
+  activeTaskError: string | null;
+  streamingText: string;
+  activeUnsub: (() => void) | null;
+
+  setConnected: (c: boolean) => void;
+  setSearch: (q: string) => void;
+  setFilterStatus: (status: string) => void;
+
+  refreshList: () => Promise<void>;
+  refreshActive: () => Promise<void>;
+
+  dispatch: (goal: string, context: string, toolsets: string[], mode: TaskMode) => Promise<void>;
+  followup: (id: string, message: string) => Promise<void>;
+  retry: (id: string) => Promise<void>;
+  cancel: (id: string) => Promise<void>;
+
+  openTask: (id: string) => Promise<void>;
+  closeTask: () => void;
+  removeTask: (id: string) => Promise<void>;
+  clearCompleted: () => Promise<void>;
+}
+
+export const useTaskStore = create<TaskStore>()((set, get) => ({
+  tasks: [],
+  total: 0,
+  loading: false,
+  connected: false,
+  searchQuery: "",
+  filterStatus: "",
+  activeTaskId: null,
+  activeTaskDetail: null,
+  activeTaskError: null,
+  streamingText: "",
+  activeUnsub: null,
+
+  setConnected(connected) {
+    set({ connected });
+  },
+
+  setSearch(q) {
+    set({ searchQuery: q });
+    get().refreshList();
+  },
+
+  setFilterStatus(status) {
+    set({ filterStatus: status });
+    get().refreshList();
+  },
+
+  async refreshList() {
+    set({ loading: true });
+    try {
+      const { searchQuery, filterStatus } = get();
+      const { tasks, total } = await apiList({
+        limit: 100,
+        q: searchQuery || undefined,
+        status: filterStatus || undefined,
+      });
+      set({ tasks, total, loading: false });
+    } catch {
+      set({ loading: false });
+    }
+  },
+
+  async refreshActive() {
+    const id = get().activeTaskId;
+    if (!id) return;
+    try {
+      const detail = await apiGet(id);
+      if (get().activeTaskId === id) {
+        set({ activeTaskDetail: detail, streamingText: "" });
+      }
+    } catch {
+      /* ignore */
+    }
+  },
+
+  async dispatch(goal, context, toolsets, mode) {
+    await apiCreate({ goal, context, toolsets, mode });
+    await get().refreshList();
+  },
+
+  async followup(id, message) {
+    await apiFollowup(id, { message });
+    // Re-open task to pick up new turn + start SSE
+    await get().openTask(id);
+    await get().refreshList();
+  },
+
+  async retry(id) {
+    const task = get().activeTaskDetail ?? get().tasks.find((t) => t.id === id);
+    if (!task) return;
+    await apiCreate({
+      goal: task.goal,
+      context: task.context,
+      toolsets: task.toolsets,
+      mode: task.mode,
+    });
+    await get().refreshList();
+  },
+
+  async cancel(id) {
+    await apiCancel(id);
+    await get().refreshActive();
+    await get().refreshList();
+  },
+
+  async openTask(id) {
+    // Cleanup previous SSE
+    get().activeUnsub?.();
+    set({
+      activeTaskId: id,
+      activeTaskDetail: null,
+      activeTaskError: null,
+      streamingText: "",
+      activeUnsub: null,
+    });
+
+    try {
+      const detail = await apiGet(id);
+      if (get().activeTaskId !== id) return;
+      set({ activeTaskDetail: detail });
+
+      // If running, subscribe to SSE for live updates
+      if (detail.status === "running") {
+        const unsub = subscribeToTask(
+          id,
+          (event) => {
+            if (get().activeTaskId !== id) return;
+
+            if (event.event === "message.delta" && event.delta) {
+              set((s) => ({ streamingText: s.streamingText + event.delta }));
+            }
+
+            if (
+              event.event === "phase.completed" ||
+              event.event === "phase.failed" ||
+              event.event === "phase.started"
+            ) {
+              // Phase transition: clear streaming text and refresh full state
+              set({ streamingText: "" });
+              get().refreshActive();
+            }
+
+            if (
+              event.event === "pipeline.completed" ||
+              event.event === "pipeline.failed"
+            ) {
+              set({ streamingText: "" });
+              get().refreshActive();
+              get().refreshList();
+            }
+          },
+          () => {},
+          () => {}
+        );
+        set({ activeUnsub: unsub });
+      }
+    } catch (e) {
+      if (get().activeTaskId === id) {
+        set({ activeTaskError: e instanceof Error ? e.message : String(e) });
+        get().refreshList();
+      }
+    }
+  },
+
+  closeTask() {
+    get().activeUnsub?.();
+    set({
+      activeTaskId: null,
+      activeTaskDetail: null,
+      activeTaskError: null,
+      streamingText: "",
+      activeUnsub: null,
+    });
+  },
+
+  async removeTask(id) {
+    await apiDelete(id);
+    if (get().activeTaskId === id) get().closeTask();
+    await get().refreshList();
+  },
+
+  async clearCompleted() {
+    const toRemove = get().tasks.filter(
+      (t) => t.status === "completed" || t.status === "failed"
+    );
+    await Promise.all(toRemove.map((t) => apiDelete(t.id)));
+    await get().refreshList();
+  },
+}));
+
+// Global poll: refresh list when there are running tasks
+let pollTimer: ReturnType<typeof setInterval> | null = null;
+
+export function startPolling() {
+  if (pollTimer) return;
+  pollTimer = setInterval(() => {
+    const state = useTaskStore.getState();
+    const listHasInFlight = state.tasks.some((t) => t.status === "running");
+    if (listHasInFlight) state.refreshList();
+  }, 3000);
+}
