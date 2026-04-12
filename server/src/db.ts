@@ -18,7 +18,7 @@ import type {
   PhaseStatus,
   PipelineProgress,
 } from "../../shared/types.ts";
-// Vector search handled by sqlite-vec extension (vec0 virtual table)
+import { getEmbeddingDimensions } from "./embedding.ts";
 
 const DB_DIR = join(homedir(), ".hermes-dashboard");
 mkdirSync(DB_DIR, { recursive: true });
@@ -112,9 +112,8 @@ db.exec(`
   );
 `);
 
-// Vector index — created separately because dimensions might vary.
-// Default 1536 (text-embedding-3-small). Override via EMBEDDING_DIMENSIONS env.
-const VEC_DIM = Number(process.env.EMBEDDING_DIMENSIONS) || 1536;
+// Vector index dimensions from embedding config
+const VEC_DIM = getEmbeddingDimensions();
 
 try {
   db.exec(

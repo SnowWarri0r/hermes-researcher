@@ -1,19 +1,21 @@
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
-import type { ModelRouting, TaskTemplate } from "../../shared/types.ts";
+import type { ModelRouting, TaskTemplate, EmbeddingSettings } from "../../shared/types.ts";
 import { DEFAULT_MODEL_ROUTING } from "../../shared/types.ts";
 
 const SETTINGS_PATH = join(homedir(), ".hermes-dashboard", "settings.json");
 
 interface Settings {
   modelRouting: ModelRouting;
+  embedding: EmbeddingSettings;
   templates: TaskTemplate[];
 }
 
 function defaults(): Settings {
   return {
     modelRouting: { ...DEFAULT_MODEL_ROUTING },
+    embedding: { endpoint: "", apiKey: "", model: "", dimensions: 0 },
     templates: [],
   };
 }

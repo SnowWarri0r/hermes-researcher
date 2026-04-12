@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useTaskStore } from "../store/tasks";
 import { checkHealth } from "../api/client";
-import type { ModelRouting, TaskTemplate, TemplateVariable, TaskMode } from "../types";
+import type { ModelRouting, TaskTemplate, TemplateVariable, TaskMode, EmbeddingSettings } from "../types";
 import { TASK_MODE_META } from "../types";
 
 const API = "/api";
@@ -21,6 +21,7 @@ export function Settings() {
   return (
     <div className="max-w-2xl space-y-8">
       <ConnectionSection connected={connected} setConnected={setConnected} />
+      <EmbeddingSection />
       <ModelRoutingSection />
       <TemplatesSection />
     </div>
@@ -67,6 +68,143 @@ function ConnectionSection({
         >
           {testing ? "Testing..." : "Test Connection"}
         </button>
+      </div>
+    </div>
+  );
+}
+
+function EmbeddingSection() {
+  const [config, setConfig] = useState<EmbeddingSettings | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [testResult, setTestResult] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetch(`${API}/settings`)
+      .then((r) => r.json())
+      .then((d) => setConfig(d.embedding ?? { endpoint: "", apiKey: "", model: "", dimensions: 0 }))
+      .catch(() => {});
+  }, []);
+
+  async function save() {
+    if (!config) return;
+    setSaving(true);
+    await fetch(`${API}/settings`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ embedding: config }),
+    });
+    setSaving(false);
+  }
+
+  async function testConnection() {
+    setTestResult("Testing...");
+    try {
+      if (!config?.endpoint || !config?.apiKey) {
+        setTestResult("Endpoint and API key required");
+        return;
+      }
+      const base = config.endpoint.replace(/\/$/, "");
+      const url = base.endsWith("/v1") ? `${base}/embeddings` : `${base}/v1/embeddings`;
+      const res = await fetch("/api/test-embedding", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url, apiKey: config.apiKey, model: config.model }),
+      });
+      const data = await res.json();
+      if (data.ok) {
+        setTestResult(`Connected — returned ${data.dimensions}-dim vector`);
+      } else {
+        setTestResult(`Failed: ${data.error}`);
+      }
+    } catch (e) {
+      setTestResult(`Error: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
+
+  if (!config) return null;
+
+  const inputCls = "flex-1 bg-abyss border border-charcoal rounded-md px-3 py-1.5 text-xs text-snow placeholder:text-slate-steel/50 font-mono focus:outline-none focus:border-emerald-signal/50";
+
+  return (
+    <div>
+      <h2 className="text-lg font-semibold text-snow mb-4 font-[family-name:var(--font-heading)] tracking-tight">
+        Embedding
+      </h2>
+      <div className="bg-carbon border border-charcoal rounded-lg p-5 space-y-3">
+        <div className="text-xs text-slate-steel mb-1">
+          Any OpenAI-compatible <span className="font-mono text-mint">/v1/embeddings</span> endpoint.
+          Required for semantic knowledge recall.
+        </div>
+
+        <div className="flex items-center gap-3">
+          <div className="w-20 shrink-0 text-xs font-medium text-snow">Endpoint</div>
+          <input
+            type="text"
+            value={config.endpoint}
+            onChange={(e) => setConfig({ ...config, endpoint: e.target.value })}
+            placeholder="http://127.0.0.1:18792/v1"
+            className={inputCls}
+          />
+        </div>
+        <div className="flex items-center gap-3">
+          <div className="w-20 shrink-0 text-xs font-medium text-snow">API Key</div>
+          <input
+            type="password"
+            value={config.apiKey}
+            onChange={(e) => setConfig({ ...config, apiKey: e.target.value })}
+            placeholder="sk-... or bearer token"
+            className={inputCls}
+          />
+        </div>
+        <div className="flex items-center gap-3">
+          <div className="w-20 shrink-0 text-xs font-medium text-snow">Model</div>
+          <input
+            type="text"
+            value={config.model}
+            onChange={(e) => setConfig({ ...config, model: e.target.value })}
+            placeholder="text-embedding-3-small"
+            className={inputCls}
+          />
+        </div>
+        <div className="flex items-center gap-3">
+          <div className="w-20 shrink-0 text-xs font-medium text-snow">Dimensions</div>
+          <input
+            type="number"
+            value={config.dimensions || ""}
+            onChange={(e) => setConfig({ ...config, dimensions: Number(e.target.value) || 0 })}
+            placeholder="1536"
+            className={`${inputCls} w-24 flex-none`}
+          />
+          <span className="text-[10px] text-slate-steel">Must match model output. 0 = auto (1536)</span>
+        </div>
+
+        <div className="flex items-center gap-3 pt-1">
+          <button
+            onClick={save}
+            disabled={saving}
+            className="px-4 py-1.5 bg-carbon border border-charcoal rounded-md text-xs font-medium text-mint hover:border-emerald-signal/50 disabled:opacity-40 transition-colors"
+          >
+            {saving ? "Saving..." : "Save"}
+          </button>
+          <button
+            onClick={testConnection}
+            className="px-4 py-1.5 bg-abyss border border-charcoal rounded-md text-xs text-parchment hover:border-charcoal-light transition-colors"
+          >
+            Test
+          </button>
+          {testResult && (
+            <span className={`text-[11px] ${testResult.startsWith("Connected") ? "text-success" : "text-danger"}`}>
+              {testResult}
+            </span>
+          )}
+        </div>
+
+        <div className="text-[10px] text-slate-steel/60 pt-1 space-y-0.5">
+          <div>Common providers:</div>
+          <div className="font-mono">OpenAI: https://api.openai.com · model: text-embedding-3-small · dim: 1536</div>
+          <div className="font-mono">Doubao: http://127.0.0.1:18792/v1 · model: ep-xxx · dim: 2048</div>
+          <div className="font-mono">Ollama: http://localhost:11434 · model: nomic-embed-text · dim: 768</div>
+        </div>
       </div>
     </div>
   );
