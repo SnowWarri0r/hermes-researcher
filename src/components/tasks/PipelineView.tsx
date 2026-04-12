@@ -1,6 +1,8 @@
 import { useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import remarkMath from "remark-math";
+import rehypeKatex from "rehype-katex";
 import type { PhaseDetail, PhaseKind, PhaseStatus } from "../../types";
 
 const PHASE_META: Record<
@@ -168,7 +170,7 @@ function PhaseBody({ phase }: { phase: PhaseDetail }) {
           </div>
           <div className="bg-abyss border border-charcoal-subtle rounded-md px-3 py-2.5 max-h-[320px] overflow-y-auto">
             <div className="prose-hermes prose-hermes-compact">
-              <ReactMarkdown remarkPlugins={[remarkGfm]}>
+              <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex]}>
                 {phase.output}
               </ReactMarkdown>
             </div>
