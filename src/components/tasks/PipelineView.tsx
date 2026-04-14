@@ -47,7 +47,11 @@ function toolCount(phase: PhaseDetail): number {
   return phase.toolCount ?? 0;
 }
 
-export function PipelineView({ phases }: { phases: PhaseDetail[] }) {
+export function PipelineView({ phases, streamingText, streamingPhaseKind }: {
+  phases: PhaseDetail[];
+  streamingText?: string;
+  streamingPhaseKind?: string;
+}) {
   // Group phases by seq (stage). Research stage (seq=1) has N branches.
   const stages = new Map<number, PhaseDetail[]>();
   for (const p of phases) {
@@ -65,14 +69,17 @@ export function PipelineView({ phases }: { phases: PhaseDetail[] }) {
   return (
     <div className="space-y-2">
       {orderedStages.map(([seq, branch]) => (
-        <StageRow key={seq} phases={branch} />
+        <StageRow key={seq} phases={branch} streamingText={streamingText} streamingPhaseKind={streamingPhaseKind} />
       ))}
     </div>
   );
 }
 
-function StageRow({ phases }: { phases: PhaseDetail[] }) {
-  // All phases in a stage share the same kind
+function StageRow({ phases, streamingText, streamingPhaseKind }: {
+  phases: PhaseDetail[];
+  streamingText?: string;
+  streamingPhaseKind?: string;
+}) {
   const kind = phases[0].kind;
   const meta = PHASE_META[kind];
   const isParallel = phases.length > 1;
@@ -91,24 +98,29 @@ function StageRow({ phases }: { phases: PhaseDetail[] }) {
         </div>
         <div className="space-y-1.5">
           {phases.map((p) => (
-            <PhaseRow key={p.id} phase={p} compact />
+            <PhaseRow key={p.id} phase={p} compact streamingText={p.status === "running" && p.kind === streamingPhaseKind ? streamingText : undefined} />
           ))}
         </div>
       </div>
     );
   }
 
-  return <PhaseRow phase={phases[0]} />;
+  return <PhaseRow phase={phases[0]} streamingText={phases[0].status === "running" && phases[0].kind === streamingPhaseKind ? streamingText : undefined} />;
 }
 
 function PhaseRow({
   phase,
   compact = false,
+  streamingText,
 }: {
   phase: PhaseDetail;
   compact?: boolean;
+  streamingText?: string;
 }) {
   const [open, setOpen] = useState(false);
+  // Auto-expand when streaming text arrives
+  const hasStreaming = Boolean(streamingText);
+  const isOpen = open || hasStreaming;
   const meta = PHASE_META[phase.kind];
   const duration = formatDuration(phase);
   const tools = toolCount(phase);
@@ -148,18 +160,20 @@ function PhaseRow({
           </span>
         )}
         <span className="text-slate-steel text-[10px] shrink-0 select-none">
-          {open ? "▼" : "▶"}
+          {isOpen ? "▼" : "▶"}
         </span>
       </button>
 
-      {open && <PhaseBody phase={phase} />}
+      {isOpen && <PhaseBody phase={phase} streamingText={streamingText} />}
     </div>
   );
 }
 
-function PhaseBody({ phase }: { phase: PhaseDetail }) {
+function PhaseBody({ phase, streamingText }: { phase: PhaseDetail; streamingText?: string }) {
   const hasOutput = phase.output.trim().length > 0;
   const hasEvents = phase.events.length > 0;
+  const displayText = hasOutput ? phase.output : (streamingText || "");
+  const hasDisplayText = displayText.trim().length > 0;
 
   return (
     <div className="border-t border-charcoal-subtle px-3 py-3 space-y-3">
@@ -169,16 +183,17 @@ function PhaseBody({ phase }: { phase: PhaseDetail }) {
         </div>
       )}
 
-      {hasOutput && (
+      {hasDisplayText && (
         <div>
           <div className="text-[10px] text-slate-steel uppercase tracking-wider mb-1.5">
-            Output
+            {hasOutput ? "Output" : "Streaming..."}
           </div>
           <div className="bg-abyss border border-charcoal-subtle rounded-md px-3 py-2.5 max-h-[320px] overflow-y-auto">
             <div className="prose-hermes prose-hermes-compact">
               <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex]}>
-                {normalizeLatex(phase.output)}
+                {normalizeLatex(displayText)}
               </ReactMarkdown>
+              {!hasOutput && <span className="inline-block w-1.5 h-4 bg-emerald-signal/70 animate-pulse ml-0.5 align-text-bottom" />}
             </div>
           </div>
         </div>
@@ -204,7 +219,7 @@ function PhaseBody({ phase }: { phase: PhaseDetail }) {
         </div>
       )}
 
-      {!hasOutput && !hasEvents && phase.status === "running" && (
+      {!hasDisplayText && !hasEvents && phase.status === "running" && (
         <div className="text-xs text-agent-thinking animate-pulse">
           Working...
         </div>

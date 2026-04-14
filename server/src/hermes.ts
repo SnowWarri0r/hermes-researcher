@@ -23,9 +23,14 @@ export async function hermesHealth(): Promise<boolean> {
 // Runs API — independent sessions, full SSE tool events
 // Used for: research branches (parallel, need isolation)
 // ---------------------------------------------------------------------------
-export async function startHermesRun(input: string, model?: string): Promise<string> {
+export async function startHermesRun(
+  input: string,
+  model?: string,
+  conversationHistory?: { role: string; content: string }[]
+): Promise<string> {
   const body: Record<string, unknown> = { input, store: true };
   if (model) body.model = model;
+  if (conversationHistory?.length) body.conversation_history = conversationHistory;
   const res = await fetch(`${HERMES_ENDPOINT}/v1/runs`, {
     method: "POST",
     headers: headers(),
@@ -61,7 +66,9 @@ export async function* streamHermesEvents(
 // ---------------------------------------------------------------------------
 export async function hermesChatStream(opts: {
   message: string;
+  messages?: { role: string; content: string }[];
   sessionId?: string;
+  model?: string;
   signal?: AbortSignal;
 }): Promise<{
   content: string;
@@ -74,13 +81,16 @@ export async function hermesChatStream(opts: {
     h["X-Hermes-Session-Id"] = opts.sessionId;
   }
 
+  const body: Record<string, unknown> = {
+    messages: opts.messages ?? [{ role: "user", content: opts.message }],
+    stream: true,
+  };
+  if (opts.model) body.model = opts.model;
+
   const res = await fetch(`${HERMES_ENDPOINT}/v1/chat/completions`, {
     method: "POST",
     headers: h,
-    body: JSON.stringify({
-      messages: [{ role: "user", content: opts.message }],
-      stream: true,
-    }),
+    body: JSON.stringify(body),
     signal: opts.signal,
   });
 
@@ -104,13 +114,15 @@ export async function hermesChatStream(opts: {
       // data: {"choices":[{"delta":{"content":"text"}}]}
       // Plus hermes custom: event: hermes.tool.progress
       if (event.event === "hermes.tool.progress") {
-        // Map to our tool event format
+        // hermes.tool.progress payload: { tool, emoji, label }
         const data = event as unknown as Record<string, unknown>;
+        const emoji = data.emoji ? String(data.emoji) + " " : "";
+        const label = data.label ? String(data.label) : String(data.tool ?? "");
         yield {
           event: "tool.started",
           timestamp: Date.now() / 1000,
           tool: String(data.tool ?? ""),
-          preview: data.preview ? String(data.preview) : undefined,
+          preview: `${emoji}${label}`,
         };
       } else if (event.delta) {
         fullContent += event.delta;

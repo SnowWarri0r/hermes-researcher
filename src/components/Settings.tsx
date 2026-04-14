@@ -22,6 +22,7 @@ export function Settings() {
     <div className="max-w-2xl space-y-8">
       <ConnectionSection connected={connected} setConnected={setConnected} />
       <EmbeddingSection />
+      <PipelineSection />
       <ModelRoutingSection />
       <TemplatesSection />
     </div>
@@ -204,6 +205,50 @@ function EmbeddingSection() {
             </span>
           )}
         </div>
+      </div>
+    </div>
+  );
+}
+
+function PipelineSection() {
+  const [maxResearch, setMaxResearch] = useState(5);
+  const [maxRuns, setMaxRuns] = useState(10);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    fetch(`${API}/settings`).then((r) => r.json()).then((d) => setMaxResearch(d.maxParallelResearch ?? 5)).catch(() => {});
+    fetch(`${API}/gateway`).then((r) => r.json()).then((d) => setMaxRuns(d.maxConcurrentRuns ?? 10)).catch(() => {});
+  }, []);
+
+  async function save() {
+    setSaving(true);
+    try {
+      await fetch(`${API}/settings`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ maxParallelResearch: maxResearch }) });
+      await fetch(`${API}/gateway`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ maxConcurrentRuns: maxRuns }) });
+    } catch { /* ignore */ }
+    setSaving(false);
+  }
+
+  return (
+    <div>
+      <h3 className="text-sm font-semibold text-snow mb-3">Pipeline</h3>
+      <div className="space-y-3">
+        <div className="flex items-center gap-3">
+          <label className="text-xs text-parchment w-48">Max parallel research</label>
+          <input type="number" min={1} max={10} value={maxResearch} onChange={(e) => setMaxResearch(Number(e.target.value) || 1)}
+            className="w-20 px-2 py-1 text-xs bg-abyss border border-charcoal rounded text-snow text-center" />
+          <span className="text-[10px] text-slate-steel">branches per task</span>
+        </div>
+        <div className="flex items-center gap-3">
+          <label className="text-xs text-parchment w-48">Hermes max concurrent runs</label>
+          <input type="number" min={1} max={100} value={maxRuns} onChange={(e) => setMaxRuns(Number(e.target.value) || 1)}
+            className="w-20 px-2 py-1 text-xs bg-abyss border border-charcoal rounded text-snow text-center" />
+          <span className="text-[10px] text-slate-steel">gateway limit (restarts gateway)</span>
+        </div>
+        <button onClick={save} disabled={saving}
+          className="px-3 py-1.5 text-xs font-medium bg-emerald-signal/10 text-emerald-signal border border-emerald-signal/20 rounded hover:bg-emerald-signal/20 disabled:opacity-50 transition-colors">
+          {saving ? "Saving..." : "Save"}
+        </button>
       </div>
     </div>
   );

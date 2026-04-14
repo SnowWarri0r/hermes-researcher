@@ -89,6 +89,15 @@ export async function patchTask(
   if (!res.ok) throw new Error(`patch failed: ${res.status}`);
 }
 
+export async function retryTask(id: string): Promise<Task> {
+  const res = await fetch(`${API_BASE}/tasks/${id}/retry`, { method: "POST" });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`retry failed: ${res.status} ${text}`);
+  }
+  return res.json();
+}
+
 export async function deleteTask(id: string): Promise<void> {
   const res = await fetch(`${API_BASE}/tasks/${id}`, { method: "DELETE" });
   if (!res.ok) throw new Error(`deleteTask failed: ${res.status}`);

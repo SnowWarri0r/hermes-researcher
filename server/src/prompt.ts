@@ -216,6 +216,28 @@ End with a **numbered priority fix list** (top 3–5 changes only). Skip categor
 Be direct and specific. Don't pad with praise.`;
 }
 
+// Slim critique — used with conversation_history that already contains the draft
+export function critiqueInstructionPrompt(opts: { goal: string }): string {
+  return `# Critique the report I just produced
+
+## Goal it should address
+
+${opts.goal}
+
+## Output
+
+Produce a **concise** critique (300–500 words max). Focus on the top issues only:
+
+1. **Content gaps** — what important aspects are missing?
+2. **Weak claims** — which assertions lack evidence?
+3. **Structure** — does the TL;DR actually summarize? Redundant sections?
+4. **Citations** — missing or suspicious?
+
+End with a **numbered priority fix list** (top 3–5 changes only). Skip categories with no real issues.
+
+Be direct and specific. Don't pad with praise.`;
+}
+
 // ---------------------------------------------------------------------------
 // 5. REVISE — incorporate critique
 // ---------------------------------------------------------------------------
@@ -247,6 +269,34 @@ ${opts.draft}
 ## Critique
 
 ${opts.critique}
+
+## Rules
+
+- Output ONLY the final report. No meta-commentary about what changed.
+- Address the priority fix list. Strengthen weak claims or remove them.
+- The report must read as a standalone document.
+
+${styleGuide(opts.language)}`;
+}
+
+// Slim revise — used with conversation_history that contains draft + critique
+export function reviseInstructionPrompt(opts: {
+  goal: string;
+  toolsets: string[];
+  language?: string;
+}): string {
+  const toolsetsBlock =
+    opts.toolsets.length > 0
+      ? `\n\nYou may use these toolsets for fact-checking if needed: ${opts.toolsets.join(", ")}`
+      : "";
+
+  return `# Final revision
+
+Apply the critique above to produce the final report.
+
+## Goal
+
+${opts.goal}${toolsetsBlock}
 
 ## Rules
 
