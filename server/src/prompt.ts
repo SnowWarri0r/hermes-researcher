@@ -338,6 +338,88 @@ export function directReportPrompt(opts: {
 }
 
 // ---------------------------------------------------------------------------
+// B. Research adequacy gate — evaluate if findings cover the plan
+// ---------------------------------------------------------------------------
+export function researchAdequacyPrompt(opts: {
+  goal: string;
+  plan: Plan;
+  findings: { questionId: string; title: string; output: string }[];
+}): string {
+  const findingsSummary = opts.findings
+    .map((f) => `### ${f.questionId}: ${f.title}\n${f.output.slice(0, 600)}`)
+    .join("\n\n");
+
+  return `# Research adequacy check
+
+Evaluate whether the research findings adequately cover the planned questions.
+
+## Goal
+${opts.goal}
+
+## Planned questions
+${opts.plan.questions.map((q) => `- ${q.id}: ${q.title}`).join("\n")}
+
+## Findings (condensed)
+${findingsSummary}
+
+## Output (strict JSON)
+\`\`\`json
+{
+  "adequate": true/false,
+  "gaps": [
+    {"questionId": "Q2", "issue": "only surface-level stats, no mechanism explanation"},
+    {"questionId": "NEW", "title": "new question to investigate", "approach": "how to investigate"}
+  ]
+}
+\`\`\`
+
+Rules:
+- "adequate" = true if ≥80% of questions have substantive findings (not just rephrased questions)
+- Only flag real gaps — missing data, contradictions, or critical uncovered angles
+- Max 3 gaps. If findings are good enough, return {"adequate": true, "gaps": []}
+- NEW questions only if a critical angle was missed entirely`;
+}
+
+// ---------------------------------------------------------------------------
+// D. Report quality self-evaluation — score after revise
+// ---------------------------------------------------------------------------
+export function reportQualityPrompt(opts: {
+  goal: string;
+  report: string;
+}): string {
+  return `# Report quality evaluation
+
+Score this research report on a 1-10 scale.
+
+## Goal
+${opts.goal}
+
+## Report
+${opts.report.slice(0, 8000)}
+
+## Output (strict JSON)
+\`\`\`json
+{
+  "score": 7,
+  "pass": true,
+  "issues": ["issue 1 if any"]
+}
+\`\`\`
+
+## Scoring guide
+- 1-4: Major gaps, wrong information, or doesn't address the goal → pass=false
+- 5-6: Addresses the goal but thin on evidence or missing key aspects → pass=false
+- 7-8: Solid coverage with citations, minor improvements possible → pass=true
+- 9-10: Exceptional depth and rigor → pass=true
+
+Rules:
+- Be honest, not generous. Most first drafts score 5-7.
+- "pass" = true means acceptable to deliver. false means needs another revision.
+- Max 3 issues, each under 20 words. Focus on fixable problems.
+- If score ≥ 7, set pass=true even if minor issues exist.`;
+}
+
+// ---------------------------------------------------------------------------
 // Followup context
 // ---------------------------------------------------------------------------
 const MAX_PRIOR_REPORT_CHARS = 6000;

@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import { jsonrepair } from "jsonrepair";
 import { store, db } from "./db.ts";
 import {
   streamHermesEvents,
@@ -22,6 +23,8 @@ import {
   reviseInstructionPrompt,
   directReportPrompt,
   followupContextPrompt,
+  researchAdequacyPrompt,
+  reportQualityPrompt,
   parsePlan,
   isMinorRefinement,
 } from "./prompt.ts";
@@ -548,23 +551,141 @@ async function runDeepMode(
     critiqueOutput = critiqueResult.output;
   }
 
-  // ── Revise ──
-  // Use conversation_history to carry draft + critique, slim instruction as input
-  const revisePhase = store.addPhase({ turnId: opts.turnId, seq: 4, branch: 0, kind: "revise", label: "Final revision", createdAt: Date.now() });
-  const reviseResult = await runPhase({
-    taskId: opts.taskId, phaseId: revisePhase.id, kind: "revise",
-    prompt: reviseInstructionPrompt({
-      goal: opts.goal, toolsets: opts.toolsets, language: opts.language,
-    }),
-    conversationHistory: [
-      { role: "user", content: "Write a draft report." },
-      { role: "assistant", content: draftOutput },
-      { role: "user", content: "Critique this report." },
-      { role: "assistant", content: critiqueOutput },
-    ],
-  });
-  usages.push(reviseResult.usage);
-  return reviseResult.output;
+  // ── Revise + quality loop ──
+  let currentDraft = draftOutput;
+  let currentCritique = critiqueOutput;
+  let seqOffset = 4;
+
+  for (let iteration = 0; iteration <= MAX_QUALITY_ITERATIONS; iteration++) {
+    const isRetry = iteration > 0;
+    const reviseLabel = isRetry ? `Revision (iteration ${iteration + 1})` : "Final revision";
+
+    const revisePhase = store.addPhase({ turnId: opts.turnId, seq: seqOffset, branch: 0, kind: "revise", label: reviseLabel, createdAt: Date.now() });
+    const reviseResult = await runPhase({
+      taskId: opts.taskId, phaseId: revisePhase.id, kind: "revise",
+      prompt: reviseInstructionPrompt({
+        goal: opts.goal, toolsets: opts.toolsets, language: opts.language,
+      }),
+      conversationHistory: [
+        { role: "user", content: "Write a draft report." },
+        { role: "assistant", content: currentDraft },
+        { role: "user", content: "Critique this report." },
+        { role: "assistant", content: currentCritique },
+      ],
+    });
+    usages.push(reviseResult.usage);
+
+    // D. Quality gate — evaluate if report is good enough
+    if (iteration < MAX_QUALITY_ITERATIONS) {
+      const quality = await evaluateReportQuality(opts, reviseResult.output);
+      broadcast(opts.taskId, {
+        event: "pipeline.quality_check",
+        data: { score: quality.score, pass: quality.pass, issues: quality.issues, iteration: iteration + 1 },
+      });
+
+      if (quality.pass) {
+        return reviseResult.output;
+      }
+
+      // Not good enough — run another critique→revise cycle
+      seqOffset += 2;
+      currentDraft = reviseResult.output;
+
+      const reCritiquePhase = store.addPhase({ turnId: opts.turnId, seq: seqOffset - 1, branch: 0, kind: "critique", label: `Re-critique (score: ${quality.score}/10)`, createdAt: Date.now() });
+      const reCritiqueResult = await runPhaseLite({
+        taskId: opts.taskId, phaseId: reCritiquePhase.id, kind: "critique",
+        prompt: critiqueInstructionPrompt({ goal: opts.goal }),
+        messages: [
+          { role: "user", content: "Here is the revised report." },
+          { role: "assistant", content: currentDraft },
+          { role: "user", content: `The report scored ${quality.score}/10. Issues: ${quality.issues.join("; ")}. Provide a focused critique addressing these specific issues.` },
+        ],
+      });
+      usages.push(reCritiqueResult.usage);
+      currentCritique = reCritiqueResult.output;
+    } else {
+      return reviseResult.output;
+    }
+  }
+
+  return currentDraft; // fallback (shouldn't reach here)
+}
+
+// ---------------------------------------------------------------------------
+// B. Research adequacy gate
+// ---------------------------------------------------------------------------
+const MAX_SUPPLEMENTARY_RESEARCH = 3;
+
+async function evaluateResearchAdequacy(
+  opts: PipelineOpts,
+  plan: import("../../shared/types.ts").Plan,
+  researchResults: { question: import("../../shared/types.ts").ResearchQuestion; output: string; usage?: TokenUsage }[],
+  usages: (TokenUsage | undefined)[]
+): Promise<import("../../shared/types.ts").ResearchQuestion[]> {
+  try {
+    const model = getModelForPhase("critique");
+    const { content } = await hermesChat({
+      message: researchAdequacyPrompt({
+        goal: opts.goal,
+        plan,
+        findings: researchResults.map((r) => ({ questionId: r.question.id, title: r.question.title, output: r.output })),
+      }),
+      model,
+    });
+
+    const jsonBlock = content.match(/```json\s*([\s\S]*?)```/i);
+    const candidate = (jsonBlock ? jsonBlock[1] : content).trim();
+    let parsed: { adequate?: boolean; gaps?: { questionId?: string; title?: string; issue?: string; approach?: string }[] };
+    try { parsed = JSON.parse(candidate); } catch { try { parsed = JSON.parse(jsonrepair(candidate)); } catch { return []; } }
+
+    if (parsed.adequate || !Array.isArray(parsed.gaps) || parsed.gaps.length === 0) return [];
+
+    // Collect new questions from gaps
+    const supplementary: import("../../shared/types.ts").ResearchQuestion[] = [];
+    for (const gap of parsed.gaps.slice(0, MAX_SUPPLEMENTARY_RESEARCH)) {
+      if (gap.questionId === "NEW" && gap.title) {
+        supplementary.push({
+          id: `S${supplementary.length + 1}`,
+          title: gap.title,
+          approach: gap.approach || "Search web and cite primary sources.",
+        });
+      }
+    }
+    return supplementary;
+  } catch {
+    return [];
+  }
+}
+
+// ---------------------------------------------------------------------------
+// D. Report quality self-evaluation loop
+// ---------------------------------------------------------------------------
+const MAX_QUALITY_ITERATIONS = 2;
+
+async function evaluateReportQuality(
+  opts: PipelineOpts,
+  report: string,
+): Promise<{ pass: boolean; score: number; issues: string[] }> {
+  try {
+    const model = getModelForPhase("critique");
+    const { content } = await hermesChat({
+      message: reportQualityPrompt({ goal: opts.goal, report }),
+      model,
+    });
+
+    const jsonBlock = content.match(/```json\s*([\s\S]*?)```/i);
+    const candidate = (jsonBlock ? jsonBlock[1] : content).trim();
+    let parsed: { pass?: boolean; score?: number; issues?: string[] };
+    try { parsed = JSON.parse(candidate); } catch { try { parsed = JSON.parse(jsonrepair(candidate)); } catch { return { pass: true, score: 7, issues: [] }; } }
+
+    return {
+      pass: parsed.pass ?? (parsed.score !== undefined ? parsed.score >= 7 : true),
+      score: parsed.score ?? 7,
+      issues: Array.isArray(parsed.issues) ? parsed.issues.map(String).slice(0, 3) : [],
+    };
+  } catch {
+    return { pass: true, score: 7, issues: [] };
+  }
 }
 
 // Shared plan + research for standard/deep modes (with optional cache for retry)
@@ -619,8 +740,11 @@ async function runPlanAndResearch(
   const researchQuestions = plan.questions.slice(0, getMaxResearch());
 
   // ── Research phase (replay cached branches, run missing ones) ──
+  type ResearchResult = { question: import("../../shared/types.ts").ResearchQuestion; output: string; usage?: TokenUsage };
+  let researchResults: ResearchResult[];
+
   const cachedResearch = cache?.researchByBranch;
-  const cachedResults: { question: import("../../shared/types.ts").ResearchQuestion; output: string; usage?: TokenUsage }[] = [];
+  const cachedResults: ResearchResult[] = [];
   const missingBranches: { question: import("../../shared/types.ts").ResearchQuestion; index: number }[] = [];
 
   for (let i = 0; i < researchQuestions.length; i++) {
@@ -663,34 +787,59 @@ async function runPlanAndResearch(
       const bi = researchQuestions.findIndex((q) => q.id === b.question.id);
       return ai - bi;
     });
-    return { plan, researchResults: allResults };
+    researchResults = allResults;
+  } else if (cachedResults.length > 0) {
+    // All research was cached
+    researchResults = cachedResults;
+  } else {
+    // No cache at all — original flow
+    const researchPhases: Phase[] = researchQuestions.map((q, i) =>
+      store.addPhase({ turnId, seq: 1, branch: i, kind: "research", label: `${q.id}: ${q.title}`, createdAt: Date.now() })
+    );
+
+    broadcast(taskId, {
+      event: "pipeline.plan_parsed",
+      data: { plan, researchPhaseIds: researchPhases.map((p) => p.id) },
+    });
+
+    researchResults = await Promise.all(
+      researchQuestions.map((q, i) =>
+        runPhase({ taskId, phaseId: researchPhases[i].id, kind: "research", prompt: researchPrompt({ goal, question: q, context }) })
+          .then((r) => ({ question: q, output: r.output, usage: r.usage }))
+      )
+    );
+    researchResults.forEach((r) => usages.push(r.usage));
+
+    for (const r of researchResults) {
+      extractPhaseKnowledge(taskId, r.question.title, r.output).catch(() => {});
+    }
   }
 
-  // All research was cached (or no missing branches above created new results)
-  if (cachedResults.length > 0) {
-    return { plan, researchResults: cachedResults };
-  }
+  // ── B. Research adequacy gate (deep mode only) ──
+  if (opts.mode === "deep") {
+    const supplementary = await evaluateResearchAdequacy(opts, plan, researchResults, usages);
+    if (supplementary.length > 0) {
+      broadcast(taskId, { event: "pipeline.supplementary_research", data: { count: supplementary.length } });
 
-  // No cache at all — original flow
-  const researchPhases: Phase[] = researchQuestions.map((q, i) =>
-    store.addPhase({ turnId, seq: 1, branch: i, kind: "research", label: `${q.id}: ${q.title}`, createdAt: Date.now() })
-  );
+      const nextBranch = researchResults.length;
+      const supPhases = supplementary.map((q, i) =>
+        store.addPhase({ turnId, seq: 1, branch: nextBranch + i, kind: "research", label: `${q.id}: ${q.title} (supplementary)`, createdAt: Date.now() })
+      );
 
-  broadcast(taskId, {
-    event: "pipeline.plan_parsed",
-    data: { plan, researchPhaseIds: researchPhases.map((p) => p.id) },
-  });
+      const supResults = await Promise.all(
+        supplementary.map((q, i) =>
+          runPhase({ taskId, phaseId: supPhases[i].id, kind: "research", prompt: researchPrompt({ goal, question: q, context }) })
+            .then((r) => ({ question: q, output: r.output, usage: r.usage }))
+        )
+      );
+      supResults.forEach((r) => usages.push(r.usage));
 
-  const researchResults = await Promise.all(
-    researchQuestions.map((q, i) =>
-      runPhase({ taskId, phaseId: researchPhases[i].id, kind: "research", prompt: researchPrompt({ goal, question: q, context }) })
-        .then((r) => ({ question: q, output: r.output, usage: r.usage }))
-    )
-  );
-  researchResults.forEach((r) => usages.push(r.usage));
+      for (const r of supResults) {
+        extractPhaseKnowledge(taskId, r.question.title, r.output).catch(() => {});
+      }
 
-  for (const r of researchResults) {
-    extractPhaseKnowledge(taskId, r.question.title, r.output).catch(() => {});
+      researchResults.push(...supResults);
+    }
   }
 
   return { plan, researchResults };
