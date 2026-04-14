@@ -287,7 +287,7 @@ export function TaskDetail() {
                   streamingText={isLatestTurn ? streamingText : ""}
                   previousReport={
                     viewingTurn && viewingTurn.seq > 0
-                      ? task.turns.find((t) => t.seq === viewingTurn.seq - 1)?.report
+                      ? [...task.turns].reverse().find((t) => t.seq < viewingTurn.seq && t.report)?.report
                       : undefined
                   }
                 />
