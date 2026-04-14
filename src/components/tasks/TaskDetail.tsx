@@ -401,7 +401,7 @@ function normalizeLatexDelimiters(text: string): string {
  * render raw `**`, `` ` ``, `[`, etc. during streaming.
  * Leaves $...$ math delimiters alone.
  */
-function sanitizeStreamingMarkdown(text: string): string {
+export function sanitizeStreamingMarkdown(text: string): string {
   let s = text;
   // Remove trailing unclosed fenced code block (``` without matching close)
   const fences = s.match(/```/g);
@@ -409,18 +409,27 @@ function sanitizeStreamingMarkdown(text: string): string {
     const lastFence = s.lastIndexOf("```");
     s = s.slice(0, lastFence);
   }
-  // Remove trailing unclosed bold/italic: odd number of ** or * at end
-  s = s.replace(/(\*{1,2})(?=[^*]*$)/, (match, stars) => {
-    const before = s.slice(0, s.lastIndexOf(match));
-    const opens = (before.match(new RegExp(`\\${stars[0]}{${stars.length}}`, "g")) || []).length;
-    return opens % 2 === 0 ? "" : match;
-  });
+  // Remove trailing unclosed bold (**): if odd count, strip from last **
+  const bolds = s.match(/\*\*/g);
+  if (bolds && bolds.length % 2 !== 0) {
+    const lastBold = s.lastIndexOf("**");
+    s = s.slice(0, lastBold);
+  }
+  // Remove trailing unclosed italic (*): count single * not part of **
+  const withoutBold = s.replace(/\*\*/g, "");
+  const singles = withoutBold.match(/\*/g);
+  if (singles && singles.length % 2 !== 0) {
+    for (let i = s.length - 1; i >= 0; i--) {
+      if (s[i] === "*" && (i === 0 || s[i - 1] !== "*") && (i >= s.length - 1 || s[i + 1] !== "*")) {
+        s = s.slice(0, i);
+        break;
+      }
+    }
+  }
   // Remove trailing unclosed inline code backtick (but NOT inside $$...$$)
-  // Count backticks outside of math blocks
   const withoutMath = s.replace(/\$\$[\s\S]*?\$\$/g, "").replace(/\$[^$]*?\$/g, "");
   const backticks = withoutMath.match(/`/g);
   if (backticks && backticks.length % 2 !== 0) {
-    // Find last backtick that's not inside a math block
     for (let i = s.length - 1; i >= 0; i--) {
       if (s[i] === "`" && !isInsideMath(s, i)) {
         s = s.slice(0, i);
