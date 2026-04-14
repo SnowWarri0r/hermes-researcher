@@ -11,7 +11,8 @@
   "dependencies": {
     "@hono/node-server": "^1.13.7",
     "better-sqlite3": "^11.7.0",
-    "hono": "^4.6.12"
+    "hono": "^4.6.12",
+    "jsonrepair": "^3.13.3"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.12",
