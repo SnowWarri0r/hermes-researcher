@@ -6,6 +6,7 @@ import { TaskList } from "./components/tasks/TaskList";
 import { TaskDetail } from "./components/tasks/TaskDetail";
 import { Settings } from "./components/Settings";
 import { Knowledge } from "./components/Knowledge";
+import { Schedules } from "./components/Schedules";
 import { useTaskStore, startPolling } from "./store/tasks";
 import { checkHealth } from "./api/client";
 import { requestNotificationPermission } from "./hooks/useNotification";
@@ -60,6 +61,7 @@ function AppShell() {
           <Routes>
             <Route path="/" element={<TasksPage />} />
             <Route path="/tasks/:taskId" element={<><TaskOpener /><TasksPage /></>} />
+            <Route path="/schedules" element={<Schedules />} />
             <Route path="/knowledge" element={<Knowledge />} />
             <Route path="/settings" element={<div className="max-w-3xl mx-auto"><Settings /></div>} />
             <Route path="*" element={<Navigate to="/" replace />} />
