@@ -189,6 +189,12 @@ app.post("/api/tasks/:id/retry", (c) => {
     }
   }
 
+  // Replace the failed turn instead of creating a new one
+  // This prevents v2, v3, v4... piling up from repeated retries
+  if (lastTurn && lastTurn.status === "failed") {
+    store.deleteTurn(lastTurn.id);
+  }
+
   const createdAt = Date.now();
   const turn = store.addTurn({ taskId: id, userMessage: task.goal, createdAt });
 

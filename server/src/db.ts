@@ -392,6 +392,10 @@ export const store = {
     );
   },
 
+  deleteTurn(turnId: number) {
+    db.prepare(`DELETE FROM turns WHERE id = ?`).run(turnId);
+  },
+
   addTurn(opts: {
     taskId: string;
     userMessage: string;
