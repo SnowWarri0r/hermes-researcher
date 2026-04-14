@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback, useRef } from "react";
+import { useNavigate } from "react-router";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
@@ -22,17 +23,23 @@ const mdComponents = {
 };
 
 export function TaskDetail() {
+  const navigate = useNavigate();
   const activeTaskId = useTaskStore((s) => s.activeTaskId);
   const task = useTaskStore((s) => s.activeTaskDetail);
   const loadError = useTaskStore((s) => s.activeTaskError);
   const streamingText = useTaskStore((s) => s.streamingText);
   const streamingPhaseKind = useTaskStore((s) => s.streamingPhaseKind);
-  const closeTask = useTaskStore((s) => s.closeTask);
+  const storeCloseTask = useTaskStore((s) => s.closeTask);
   const followup = useTaskStore((s) => s.followup);
   const retry = useTaskStore((s) => s.retry);
   const cancel = useTaskStore((s) => s.cancel);
   const togglePin = useTaskStore((s) => s.togglePin);
   const setTags = useTaskStore((s) => s.setTags);
+
+  const closeTask = useCallback(() => {
+    storeCloseTask();
+    navigate("/");
+  }, [storeCloseTask, navigate]);
 
   const [followupMessage, setFollowupMessage] = useState("");
   const [sending, setSending] = useState(false);

@@ -1,3 +1,4 @@
+import { useNavigate } from "react-router";
 import type { Task, TaskMode } from "../../types";
 import { StatusBadge } from "../common/Badge";
 import { useTaskStore } from "../../store/tasks";
@@ -14,6 +15,7 @@ const MODE_LABEL: Record<TaskMode, string> = {
 };
 
 export function TaskCard({ task }: { task: Task }) {
+  const navigate = useNavigate();
   const removeTask = useTaskStore((s) => s.removeTask);
   const openTask = useTaskStore((s) => s.openTask);
   const togglePin = useTaskStore((s) => s.togglePin);
@@ -40,7 +42,7 @@ export function TaskCard({ task }: { task: Task }) {
 
   return (
     <div
-      onClick={() => openTask(task.id)}
+      onClick={() => { openTask(task.id); navigate(`/tasks/${task.id}`); }}
       className={`group bg-carbon border ${borderClass} rounded-lg transition-colors animate-fade-in cursor-pointer hover:bg-carbon-light`}
     >
       <div className="px-4 py-3 flex items-start gap-3">
