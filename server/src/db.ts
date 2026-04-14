@@ -20,9 +20,9 @@ import type {
 } from "../../shared/types.ts";
 import { getEmbeddingDimensions } from "./embedding.ts";
 
-const DB_DIR = join(homedir(), ".hermes-dashboard");
+const DB_DIR = join(homedir(), ".hermes-researcher");
 mkdirSync(DB_DIR, { recursive: true });
-const DB_PATH = process.env.HERMES_DASHBOARD_DB || join(DB_DIR, "tasks.db");
+const DB_PATH = process.env.HERMES_RESEARCHER_DB || join(DB_DIR, "tasks.db");
 
 export const db = new Database(DB_PATH);
 db.pragma("journal_mode = WAL");

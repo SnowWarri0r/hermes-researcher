@@ -1,5 +1,5 @@
 {
-  "name": "hermes-dashboard-server",
+  "name": "hermes-researcher-server",
   "version": "0.1.0",
   "private": true,
   "type": "module",

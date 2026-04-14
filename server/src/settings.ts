@@ -4,7 +4,7 @@ import { homedir } from "node:os";
 import type { ModelRouting, TaskTemplate, EmbeddingSettings } from "../../shared/types.ts";
 import { DEFAULT_MODEL_ROUTING } from "../../shared/types.ts";
 
-const SETTINGS_PATH = join(homedir(), ".hermes-dashboard", "settings.json");
+const SETTINGS_PATH = join(homedir(), ".hermes-researcher", "settings.json");
 
 interface Settings {
   modelRouting: ModelRouting;

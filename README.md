@@ -1,15 +1,15 @@
-# Hermes Dashboard
+# Hermes Researcher
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Node.js](https://img.shields.io/badge/Node.js-%3E%3D18-339933?logo=node.js&logoColor=white)](https://nodejs.org/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.8-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![React](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=black)](https://react.dev/)
 [![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS-v4-06B6D4?logo=tailwindcss&logoColor=white)](https://tailwindcss.com/)
-[![GitHub issues](https://img.shields.io/github/issues/SnowWarri0r/hermes-dashboard)](https://github.com/SnowWarri0r/hermes-dashboard/issues)
-[![GitHub last commit](https://img.shields.io/github/last-commit/SnowWarri0r/hermes-dashboard)](https://github.com/SnowWarri0r/hermes-dashboard/commits/main)
-[![GitHub stars](https://img.shields.io/github/stars/SnowWarri0r/hermes-dashboard?style=social)](https://github.com/SnowWarri0r/hermes-dashboard/stargazers)
+[![GitHub issues](https://img.shields.io/github/issues/SnowWarri0r/hermes-researcher)](https://github.com/SnowWarri0r/hermes-researcher/issues)
+[![GitHub last commit](https://img.shields.io/github/last-commit/SnowWarri0r/hermes-researcher)](https://github.com/SnowWarri0r/hermes-researcher/commits/main)
+[![GitHub stars](https://img.shields.io/github/stars/SnowWarri0r/hermes-researcher?style=social)](https://github.com/SnowWarri0r/hermes-researcher/stargazers)
 
-A deep-research task delegation frontend for [Hermes Agent](https://github.com/NousResearch/hermes-agent). Dispatch research tasks, watch them execute through a multi-phase pipeline, and refine reports iteratively.
+Autonomous deep-research platform powered by [Hermes Agent](https://github.com/NousResearch/hermes-agent). Multi-phase pipeline with parallel research, self-critique, iterative refinement, and real-time streaming.
 
 ```
 User goal
@@ -32,7 +32,7 @@ User goal
 
 **Iterative refinement** -- Follow-up requests re-run the full pipeline against the prior report. Version tabs let you browse v1, v2, v3... and a line-level diff view highlights changes.
 
-**Persistent storage** -- All tasks, turns, phases, and events stored in SQLite (`~/.hermes-dashboard/tasks.db`). Survives browser refreshes, device switches, server restarts.
+**Persistent storage** -- All tasks, turns, phases, and events stored in SQLite (`~/.hermes-researcher/tasks.db`). Survives browser refreshes, device switches, server restarts.
 
 **Search, filter, tags, pin** -- Keyword search, status filter (All/Running/Done/Failed), `#tag` labels, star to pin important research.
 
@@ -91,8 +91,8 @@ hermes gateway start
 ### 2. Install & Run
 
 ```bash
-git clone https://github.com/user/hermes-dashboard.git
-cd hermes-dashboard
+git clone https://github.com/SnowWarri0r/hermes-researcher.git
+cd hermes-researcher
 
 # Install frontend + server deps
 pnpm install
@@ -120,7 +120,7 @@ HERMES_API_KEY=your-secret-key pnpm start
 | `HERMES_ENDPOINT` | `http://127.0.0.1:8642` | Hermes gateway URL |
 | `PORT` | `8787` | Middleware listen port |
 | `HOST` | `0.0.0.0` | Middleware bind address |
-| `HERMES_DASHBOARD_DB` | `~/.hermes-dashboard/tasks.db` | SQLite database path |
+| `HERMES_RESEARCHER_DB` | `~/.hermes-researcher/tasks.db` | SQLite database path |
 | `EMBEDDING_ENDPOINT` | *(same as HERMES_ENDPOINT)* | OpenAI-compatible embedding API base URL |
 | `EMBEDDING_API_KEY` | *(same as HERMES_API_KEY)* | API key for embedding endpoint |
 | `EMBEDDING_MODEL` | `text-embedding-3-small` | Embedding model ID |
@@ -130,7 +130,7 @@ HERMES_API_KEY=your-secret-key pnpm start
 ## Project Structure
 
 ```
-hermes-dashboard/
+hermes-researcher/
   src/                     # React frontend
     api/client.ts          # API client + SSE subscriber
     store/tasks.ts         # Zustand store
@@ -184,7 +184,7 @@ Requesting a refinement re-runs the full pipeline with the prior report condense
 
 ## Star History
 
-[![Star History Chart](https://api.star-history.com/svg?repos=SnowWarri0r/hermes-dashboard&type=Date)](https://star-history.com/#SnowWarri0r/hermes-dashboard&Date)
+[![Star History Chart](https://api.star-history.com/svg?repos=SnowWarri0r/hermes-researcher&type=Date)](https://star-history.com/#SnowWarri0r/hermes-researcher&Date)
 
 ## License
 

@@ -333,6 +333,6 @@ resumeTracking();
 
 serve({ fetch: app.fetch, port: PORT, hostname: HOST }, (info) => {
   console.log(
-    `hermes-dashboard-server listening on http://${HOST === "0.0.0.0" ? "<lan-ip>" : HOST}:${info.port}`
+    `hermes-researcher-server listening on http://${HOST === "0.0.0.0" ? "<lan-ip>" : HOST}:${info.port}`
   );
 });
