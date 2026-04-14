@@ -201,6 +201,24 @@ app.post("/api/tasks/:id/retry", (c) => {
     mode: task.mode,
     language: task.language || undefined,
     cache,
+  }).then(() => {
+    // Deliver to Discord if this task belongs to a schedule
+    const schedule = findScheduleByTaskId(id);
+    if (schedule) {
+      import("./discord.ts").then(({ sendToDiscord }) => {
+        const updated = store.getTask(id);
+        if (updated?.result) {
+          sendToDiscord({
+            webhookUrl: schedule.discordWebhook,
+            goal: task.goal,
+            report: updated.result,
+            mode: task.mode,
+            duration: updated.completedAt && updated.createdAt ? (updated.completedAt - updated.createdAt) / 1000 : undefined,
+            tokens: updated.usage?.total_tokens,
+          });
+        }
+      });
+    }
   }).catch(() => {});
 
   return c.json(store.getTask(id));
@@ -277,6 +295,7 @@ import {
   deleteSchedule,
   triggerSchedule,
   startScheduler,
+  findScheduleByTaskId,
 } from "./scheduler.ts";
 
 app.get("/api/schedules", (c) => c.json(listSchedules()));
