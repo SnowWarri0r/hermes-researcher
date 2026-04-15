@@ -23,6 +23,7 @@ import {
   cancelTaskPhases,
   resumeTracking,
   getStreamBuffer,
+  triggerChains,
 } from "./runner.ts";
 import type { PipelineCache } from "./runner.ts";
 import type {
@@ -402,7 +403,26 @@ app.post("/api/tasks/:id/chain", async (c) => {
     createdAt: Date.now(),
   });
 
-  return c.json({ chainId, status: task.status === "completed" ? "will trigger immediately" : "pending" }, 201);
+  // If parent is already completed, trigger pending chains now.
+  // Otherwise they'll be triggered when the pipeline completes.
+  let triggered = false;
+  if (task.status === "completed" && task.result) {
+    triggerChains(id).catch((e) => console.error("[chain] trigger failed:", e));
+    triggered = true;
+  }
+
+  return c.json({ chainId, triggered }, 201);
+});
+
+app.get("/api/tasks/:id/chains", (c) => {
+  const id = c.req.param("id");
+  return c.json(store.listChainsForTask(id));
+});
+
+app.delete("/api/chains/:chainId", (c) => {
+  const chainId = Number(c.req.param("chainId"));
+  store.deleteChain(chainId);
+  return c.json({ ok: true });
 });
 
 // ---------------------------------------------------------------------------

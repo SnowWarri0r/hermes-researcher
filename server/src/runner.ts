@@ -907,7 +907,7 @@ async function runPlanAndResearch(
 // ---------------------------------------------------------------------------
 // Task chains: trigger child tasks when parent completes
 // ---------------------------------------------------------------------------
-async function triggerChains(parentTaskId: string): Promise<void> {
+export async function triggerChains(parentTaskId: string): Promise<void> {
   const chains = store.getPendingChains(parentTaskId);
   if (chains.length === 0) return;
 

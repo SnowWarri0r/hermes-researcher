@@ -10,6 +10,16 @@ import { PipelineView } from "./PipelineView";
 import { ReportDiff } from "./ReportDiff";
 import type { TurnDetail } from "../../types";
 
+interface ChainItem {
+  id: number;
+  parentTaskId: string;
+  childTaskId: string | null;
+  goalTemplate: string;
+  contextMode: string;
+  status: string;
+  createdAt: number;
+}
+
 const mdComponents = {
   a: ({
     href,
@@ -50,6 +60,7 @@ export function TaskDetail() {
   const [tagInput, setTagInput] = useState("");
   const [chainGoal, setChainGoal] = useState("");
   const [chainSending, setChainSending] = useState(false);
+  const [chains, setChains] = useState<ChainItem[]>([]);
 
   useEffect(() => {
     setFollowupMessage("");
@@ -57,6 +68,24 @@ export function TaskDetail() {
     setViewingTurnSeq(null);
     setCopied(false);
   }, [activeTaskId]);
+
+  // Fetch chains whenever the active task or its status changes
+  useEffect(() => {
+    if (!activeTaskId) { setChains([]); return; }
+    let cancelled = false;
+    async function loadChains() {
+      try {
+        const res = await fetch(`/api/tasks/${activeTaskId}/chains`);
+        if (!res.ok) return;
+        const data = (await res.json()) as ChainItem[];
+        if (!cancelled) setChains(data);
+      } catch { /* ignore */ }
+    }
+    loadChains();
+    // Poll while task is running or a chain is still pending
+    const interval = setInterval(loadChains, 3000);
+    return () => { cancelled = true; clearInterval(interval); };
+  }, [activeTaskId, task?.status]);
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
@@ -131,8 +160,12 @@ export function TaskDetail() {
         body: JSON.stringify({ goal: g }),
       });
       setChainGoal("");
-      // Refresh list to show the new chained task
+      // Refresh list + chains to show the new chain entry
       useTaskStore.getState().refreshList();
+      try {
+        const res = await fetch(`/api/tasks/${activeTaskId}/chains`);
+        if (res.ok) setChains(await res.json());
+      } catch { /* ignore */ }
     } catch {
       /* ignore */
     } finally {
@@ -326,6 +359,52 @@ export function TaskDetail() {
                   </div>
                 </form>
               )}
+              {/* Chains list */}
+              {chains.length > 0 && (
+                <div className="mt-4 bg-carbon border border-charcoal rounded-lg p-4">
+                  <div className="text-xs font-medium text-slate-steel uppercase tracking-wider mb-2">
+                    Chains ({chains.length})
+                  </div>
+                  <div className="space-y-1.5">
+                    {chains.map((c) => (
+                      <div key={c.id} className="flex items-center gap-2 text-[12px]">
+                        <span className={`shrink-0 text-[10px] font-mono px-1.5 py-0.5 rounded ${
+                          c.status === "triggered"
+                            ? "bg-emerald-signal/10 text-emerald-signal border border-emerald-signal/20"
+                            : "bg-carbon-hover text-slate-steel border border-charcoal"
+                        }`}>
+                          {c.status}
+                        </span>
+                        <span className="flex-1 text-parchment truncate" title={c.goalTemplate}>{c.goalTemplate}</span>
+                        {c.childTaskId && (
+                          <button
+                            onClick={() => {
+                              useTaskStore.getState().openTask(c.childTaskId!);
+                              navigate(`/tasks/${c.childTaskId}`);
+                            }}
+                            className="text-[10px] text-emerald-signal hover:underline shrink-0"
+                          >
+                            open →
+                          </button>
+                        )}
+                        {c.status === "pending" && (
+                          <button
+                            onClick={async () => {
+                              await fetch(`/api/chains/${c.id}`, { method: "DELETE" });
+                              setChains((cs) => cs.filter((x) => x.id !== c.id));
+                            }}
+                            className="text-slate-steel hover:text-danger text-xs shrink-0"
+                            title="Cancel"
+                          >
+                            ✕
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {/* Chain next task */}
               {isLatestTurn && canFollowup && task.result && (
                 <div className="mt-4 bg-carbon border border-charcoal rounded-lg p-4">

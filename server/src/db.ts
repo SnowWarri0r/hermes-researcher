@@ -726,4 +726,35 @@ export const store = {
       `UPDATE task_chains SET status = 'triggered', child_task_id = ? WHERE id = ?`
     ).run(childTaskId, chainId);
   },
+
+  listChainsForTask(parentTaskId: string): {
+    id: number;
+    parentTaskId: string;
+    childTaskId: string | null;
+    goalTemplate: string;
+    contextMode: string;
+    status: string;
+    createdAt: number;
+  }[] {
+    return db
+      .prepare(
+        `SELECT id, parent_task_id AS parentTaskId, child_task_id AS childTaskId,
+                goal_template AS goalTemplate, context_mode AS contextMode,
+                status, created_at AS createdAt
+         FROM task_chains WHERE parent_task_id = ? ORDER BY created_at ASC`
+      )
+      .all(parentTaskId) as {
+      id: number;
+      parentTaskId: string;
+      childTaskId: string | null;
+      goalTemplate: string;
+      contextMode: string;
+      status: string;
+      createdAt: number;
+    }[];
+  },
+
+  deleteChain(chainId: number) {
+    db.prepare(`DELETE FROM task_chains WHERE id = ?`).run(chainId);
+  },
 };
