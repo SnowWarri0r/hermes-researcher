@@ -48,10 +48,11 @@ function toolCount(phase: PhaseDetail): number {
   return phase.toolCount ?? 0;
 }
 
-export function PipelineView({ phases, streamingText, streamingPhaseKind }: {
+export function PipelineView({ phases, streamingText, streamingPhaseKind, streamingByPhase }: {
   phases: PhaseDetail[];
   streamingText?: string;
   streamingPhaseKind?: string;
+  streamingByPhase?: Record<number, string>;
 }) {
   // Group phases by seq (stage). Research stage (seq=1) has N branches.
   const stages = new Map<number, PhaseDetail[]>();
@@ -70,20 +71,31 @@ export function PipelineView({ phases, streamingText, streamingPhaseKind }: {
   return (
     <div className="space-y-2">
       {orderedStages.map(([seq, branch]) => (
-        <StageRow key={seq} phases={branch} streamingText={streamingText} streamingPhaseKind={streamingPhaseKind} />
+        <StageRow key={seq} phases={branch} streamingText={streamingText} streamingPhaseKind={streamingPhaseKind} streamingByPhase={streamingByPhase} />
       ))}
     </div>
   );
 }
 
-function StageRow({ phases, streamingText, streamingPhaseKind }: {
+function StageRow({ phases, streamingText, streamingPhaseKind, streamingByPhase }: {
   phases: PhaseDetail[];
   streamingText?: string;
   streamingPhaseKind?: string;
+  streamingByPhase?: Record<number, string>;
 }) {
   const kind = phases[0].kind;
   const meta = PHASE_META[kind];
   const isParallel = phases.length > 1;
+
+  // Prefer per-phase streaming (works for parallel research); fall back to the
+  // single streamingText when kind matches (legacy path for sequential phases).
+  function textFor(p: PhaseDetail): string | undefined {
+    if (p.status !== "running") return undefined;
+    const perPhase = streamingByPhase?.[p.id];
+    if (perPhase) return perPhase;
+    if (p.kind === streamingPhaseKind) return streamingText;
+    return undefined;
+  }
 
   if (isParallel) {
     return (
@@ -99,14 +111,14 @@ function StageRow({ phases, streamingText, streamingPhaseKind }: {
         </div>
         <div className="space-y-1.5">
           {phases.map((p) => (
-            <PhaseRow key={p.id} phase={p} compact streamingText={p.status === "running" && p.kind === streamingPhaseKind ? streamingText : undefined} />
+            <PhaseRow key={p.id} phase={p} compact streamingText={textFor(p)} />
           ))}
         </div>
       </div>
     );
   }
 
-  return <PhaseRow phase={phases[0]} streamingText={phases[0].status === "running" && phases[0].kind === streamingPhaseKind ? streamingText : undefined} />;
+  return <PhaseRow phase={phases[0]} streamingText={textFor(phases[0])} />;
 }
 
 function PhaseRow({

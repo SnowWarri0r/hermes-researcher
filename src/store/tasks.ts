@@ -25,6 +25,7 @@ interface TaskStore {
   activeTaskError: string | null;
   streamingText: string;
   streamingPhaseKind: string;
+  streamingByPhase: Record<number, string>;
   activeUnsub: (() => void) | null;
 
   setConnected: (c: boolean) => void;
@@ -59,6 +60,7 @@ export const useTaskStore = create<TaskStore>()((set, get) => ({
   activeTaskError: null,
   streamingText: "",
   streamingPhaseKind: "",
+  streamingByPhase: {},
   activeUnsub: null,
 
   setConnected(connected) {
@@ -151,6 +153,7 @@ export const useTaskStore = create<TaskStore>()((set, get) => ({
       activeTaskError: null,
       streamingText: "",
       streamingPhaseKind: "",
+      streamingByPhase: {},
       activeUnsub: null,
     });
 
@@ -177,15 +180,35 @@ export const useTaskStore = create<TaskStore>()((set, get) => ({
 
             if (event.event === "phase.started") {
               const data = event as unknown as Record<string, unknown>;
-              set({ streamingText: "", streamingPhaseKind: String(data.kind ?? "") });
+              const kind = String(data.kind ?? "");
+              const reportPhases = ["write", "draft", "revise"];
+              // Reset main streaming text only when a NEW report-producing phase starts.
+              // For research/plan/critique, keep the main report text (if any) intact.
+              if (reportPhases.includes(kind)) {
+                set({ streamingText: "", streamingPhaseKind: kind });
+              } else {
+                set({ streamingPhaseKind: kind });
+              }
               get().refreshActive();
             }
 
             if (event.event === "message.delta" && event.delta) {
-              // Accumulate streaming text for report-producing and review phases
-              const kind = get().streamingPhaseKind;
-              const streamingPhases = ["write", "draft", "revise", "critique", "plan"];
-              if (streamingPhases.includes(kind)) {
+              const data = event as unknown as Record<string, unknown>;
+              const phaseId = typeof data.phaseId === "number" ? data.phaseId : undefined;
+              const kind = String(data.kind ?? get().streamingPhaseKind);
+              const reportPhases = ["write", "draft", "revise"];
+
+              // Always accumulate per-phase for PipelineView live display
+              if (phaseId !== undefined) {
+                set((s) => ({
+                  streamingByPhase: {
+                    ...s.streamingByPhase,
+                    [phaseId]: (s.streamingByPhase[phaseId] || "") + event.delta,
+                  },
+                }));
+              }
+              // Main report area only tracks the final report-producing phase
+              if (reportPhases.includes(kind)) {
                 set((s) => ({ streamingText: s.streamingText + event.delta }));
               }
             }
@@ -194,6 +217,15 @@ export const useTaskStore = create<TaskStore>()((set, get) => ({
               event.event === "phase.completed" ||
               event.event === "phase.failed"
             ) {
+              const data = event as unknown as Record<string, unknown>;
+              const phaseId = typeof data.phaseId === "number" ? data.phaseId : undefined;
+              if (phaseId !== undefined) {
+                set((s) => {
+                  const next = { ...s.streamingByPhase };
+                  delete next[phaseId];
+                  return { streamingByPhase: next };
+                });
+              }
               set({ streamingText: "" });
               get().refreshActive();
             }
@@ -237,6 +269,7 @@ export const useTaskStore = create<TaskStore>()((set, get) => ({
       activeTaskError: null,
       streamingText: "",
       streamingPhaseKind: "",
+      streamingByPhase: {},
       activeUnsub: null,
     });
   },
