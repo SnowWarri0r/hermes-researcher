@@ -585,6 +585,10 @@ export const store = {
   },
 
   deleteTask(id: string) {
+    // Also clean up chains that had this task as their child — the chain
+    // is meaningless once the child is gone. (Foreign-key CASCADE handles
+    // parent_task_id but child_task_id has no FK constraint.)
+    db.prepare(`DELETE FROM task_chains WHERE child_task_id = ?`).run(id);
     stmts.deleteTask.run(id);
   },
 
