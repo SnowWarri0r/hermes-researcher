@@ -924,12 +924,19 @@ export async function triggerChains(parentTaskId: string): Promise<void> {
     const childId = `task_${crypto.randomUUID().replace(/-/g, "")}`;
     const createdAt = Date.now();
 
+    // Chains are transformations of the parent report, not new research.
+    // Default to quick mode (single call, no plan/research) unless explicitly
+    // overridden via chain.mode. Toolsets are dropped by default so the child
+    // doesn't pointlessly re-search what the parent already covered.
+    const chainMode: TaskMode = (chain as { mode?: TaskMode }).mode || "quick";
+    const chainToolsets = chainMode === "quick" ? [] : parent.toolsets;
+
     store.createTask({
       id: childId,
       goal: childGoal,
       context: `Based on prior research:\n\n${childContext}`,
-      toolsets: parent.toolsets,
-      mode: parent.mode,
+      toolsets: chainToolsets,
+      mode: chainMode,
       language: parent.language,
       createdAt,
     });
@@ -952,8 +959,8 @@ export async function triggerChains(parentTaskId: string): Promise<void> {
       turnId: turn.id,
       goal: childGoal,
       context: `Based on prior research:\n\n${childContext}`,
-      toolsets: parent.toolsets,
-      mode: parent.mode,
+      toolsets: chainToolsets,
+      mode: chainMode,
       language: parent.language,
     }).catch(() => {});
   }

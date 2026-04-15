@@ -59,6 +59,7 @@ export function TaskDetail() {
   const [copied, setCopied] = useState(false);
   const [tagInput, setTagInput] = useState("");
   const [chainGoal, setChainGoal] = useState("");
+  const [chainMode, setChainMode] = useState<"quick" | "standard" | "deep">("quick");
   const [chainSending, setChainSending] = useState(false);
   const [chains, setChains] = useState<ChainItem[]>([]);
 
@@ -157,7 +158,7 @@ export function TaskDetail() {
       await fetch(`/api/tasks/${activeTaskId}/chain`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ goal: g }),
+        body: JSON.stringify({ goal: g, mode: chainMode }),
       });
       setChainGoal("");
       // Refresh list + chains to show the new chain entry
@@ -412,13 +413,13 @@ export function TaskDetail() {
                     Chain next task
                   </div>
                   <div className="text-[11px] text-slate-steel mb-2">
-                    Trigger a follow-up task that receives this report's output as context.
+                    Trigger a follow-up task that receives this report as context. Quick mode skips plan+research.
                   </div>
                   <div className="flex gap-2">
                     <input
                       value={chainGoal}
                       onChange={(e) => setChainGoal(e.target.value)}
-                      placeholder="Next task goal..."
+                      placeholder="Next task goal (e.g. 提取最有用的信息)..."
                       className="flex-1 bg-abyss border border-charcoal rounded-md px-3 py-1.5 text-sm text-snow placeholder:text-slate-steel focus:outline-none focus:border-emerald-signal/50"
                       onKeyDown={(e) => {
                         if (e.key === "Enter") {
@@ -427,6 +428,16 @@ export function TaskDetail() {
                         }
                       }}
                     />
+                    <select
+                      value={chainMode}
+                      onChange={(e) => setChainMode(e.target.value as "quick" | "standard" | "deep")}
+                      className="px-2 bg-abyss border border-charcoal rounded-md text-xs text-snow focus:outline-none focus:border-emerald-signal/50 shrink-0"
+                      title="Pipeline mode for the child task"
+                    >
+                      <option value="quick">Quick</option>
+                      <option value="standard">Standard</option>
+                      <option value="deep">Deep</option>
+                    </select>
                     <button
                       onClick={handleChain}
                       disabled={!chainGoal.trim() || chainSending}

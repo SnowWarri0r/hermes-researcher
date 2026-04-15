@@ -111,6 +111,7 @@ db.exec(`
     topic, summary, content=knowledge, content_rowid=id
   );
 
+  -- Chain mode column (added later): fall back to 'quick' if missing via code
   CREATE TABLE IF NOT EXISTS schedules (
     id              TEXT PRIMARY KEY,
     name            TEXT NOT NULL,
@@ -154,6 +155,14 @@ db.exec(`
 
   CREATE INDEX IF NOT EXISTS idx_chains_parent ON task_chains(parent_task_id);
 `);
+
+// Additive: add mode column to task_chains if missing (no migrations framework)
+try {
+  const cols = db.prepare(`PRAGMA table_info(task_chains)`).all() as { name: string }[];
+  if (!cols.some((c) => c.name === "mode")) {
+    db.exec(`ALTER TABLE task_chains ADD COLUMN mode TEXT NOT NULL DEFAULT 'quick'`);
+  }
+} catch { /* ignore */ }
 
 // -----------------------------------------------------------------------------
 // Row types & mappers
@@ -697,14 +706,15 @@ export const store = {
     parentTaskId: string;
     goalTemplate: string;
     contextMode: "result" | "summary";
+    mode?: "quick" | "standard" | "deep";
     createdAt: number;
   }): number {
     const info = db
       .prepare(
-        `INSERT INTO task_chains (parent_task_id, goal_template, context_mode, created_at)
-         VALUES (?, ?, ?, ?)`
+        `INSERT INTO task_chains (parent_task_id, goal_template, context_mode, mode, created_at)
+         VALUES (?, ?, ?, ?, ?)`
       )
-      .run(opts.parentTaskId, opts.goalTemplate, opts.contextMode, opts.createdAt);
+      .run(opts.parentTaskId, opts.goalTemplate, opts.contextMode, opts.mode ?? "quick", opts.createdAt);
     return Number(info.lastInsertRowid);
   },
 
@@ -712,13 +722,14 @@ export const store = {
     id: number;
     goalTemplate: string;
     contextMode: string;
+    mode: string;
   }[] {
     return db
       .prepare(
-        `SELECT id, goal_template AS goalTemplate, context_mode AS contextMode
+        `SELECT id, goal_template AS goalTemplate, context_mode AS contextMode, mode
          FROM task_chains WHERE parent_task_id = ? AND status = 'pending'`
       )
-      .all(parentTaskId) as { id: number; goalTemplate: string; contextMode: string }[];
+      .all(parentTaskId) as { id: number; goalTemplate: string; contextMode: string; mode: string }[];
   },
 
   markChainTriggered(chainId: number, childTaskId: string) {
@@ -733,6 +744,7 @@ export const store = {
     childTaskId: string | null;
     goalTemplate: string;
     contextMode: string;
+    mode: string;
     status: string;
     createdAt: number;
   }[] {
@@ -740,7 +752,7 @@ export const store = {
       .prepare(
         `SELECT id, parent_task_id AS parentTaskId, child_task_id AS childTaskId,
                 goal_template AS goalTemplate, context_mode AS contextMode,
-                status, created_at AS createdAt
+                mode, status, created_at AS createdAt
          FROM task_chains WHERE parent_task_id = ? ORDER BY created_at ASC`
       )
       .all(parentTaskId) as {
@@ -749,6 +761,7 @@ export const store = {
       childTaskId: string | null;
       goalTemplate: string;
       contextMode: string;
+      mode: string;
       status: string;
       createdAt: number;
     }[];

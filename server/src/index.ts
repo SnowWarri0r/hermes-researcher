@@ -391,6 +391,7 @@ app.post("/api/tasks/:id/chain", async (c) => {
   const body = (await c.req.json()) as {
     goal: string;
     contextMode?: "result" | "summary";
+    mode?: "quick" | "standard" | "deep";
   };
   if (!body.goal?.trim()) {
     return c.json({ error: "goal is required" }, 400);
@@ -400,6 +401,7 @@ app.post("/api/tasks/:id/chain", async (c) => {
     parentTaskId: id,
     goalTemplate: body.goal.trim(),
     contextMode: body.contextMode ?? "result",
+    mode: body.mode ?? "quick",
     createdAt: Date.now(),
   });
 
