@@ -22,6 +22,7 @@ import {
   subscribe,
   cancelTaskPhases,
   resumeTracking,
+  getStreamBuffer,
 } from "./runner.ts";
 import type { PipelineCache } from "./runner.ts";
 import type {
@@ -60,6 +61,18 @@ app.get("/api/tasks/:id", (c) => {
   const id = c.req.param("id");
   const task = store.getTask(id);
   if (!task) return c.json({ error: "not found" }, 404);
+
+  // Merge in-memory streaming buffers for running phases so clients that
+  // subscribe mid-stream see content accumulated before they connected.
+  for (const turn of task.turns) {
+    for (const phase of turn.phases) {
+      if (phase.status === "running") {
+        const buf = getStreamBuffer(phase.id);
+        if (buf && !phase.output) phase.output = buf;
+      }
+    }
+  }
+
   return c.json(task);
 });
 

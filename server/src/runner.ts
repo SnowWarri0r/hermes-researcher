@@ -81,6 +81,24 @@ function broadcast(taskId: string, event: PipelineEvent) {
 // ---------------------------------------------------------------------------
 const phaseControllers = new Map<number, AbortController>();
 
+// In-memory streaming buffer: accumulates message.delta per running phase
+// so clients that subscribe mid-stream can see the prior content.
+// Cleared when phase completes/fails.
+const phaseStreamBuffers = new Map<number, string>();
+
+/** Get the partial streaming output for a phase that's currently running. */
+export function getStreamBuffer(phaseId: number): string | undefined {
+  return phaseStreamBuffers.get(phaseId);
+}
+
+function appendStreamBuffer(phaseId: number, delta: string): void {
+  phaseStreamBuffers.set(phaseId, (phaseStreamBuffers.get(phaseId) || "") + delta);
+}
+
+function clearStreamBuffer(phaseId: number): void {
+  phaseStreamBuffers.delete(phaseId);
+}
+
 async function runPhase(opts: {
   taskId: string;
   phaseId: number;
@@ -108,13 +126,15 @@ async function runPhase(opts: {
 
   try {
     for await (const event of streamHermesEvents(runId, controller.signal)) {
-      const isNoise = event.event === "message.delta";
-      if (!isNoise) {
+      const isDelta = event.event === "message.delta";
+      if (!isDelta) {
         store.appendEvent(runId, event);
+      } else if (event.delta) {
+        appendStreamBuffer(phaseId, event.delta);
       }
       broadcast(taskId, {
         event: event.event,
-        data: { ...event, phaseId, runId },
+        data: { ...event, phaseId, runId, kind },
       });
 
       if (event.event === "run.completed") {
@@ -133,6 +153,7 @@ async function runPhase(opts: {
     }
   } finally {
     phaseControllers.delete(phaseId);
+    clearStreamBuffer(phaseId);
   }
 
   const completedAt = Date.now();
@@ -199,9 +220,10 @@ async function runPhaseLite(opts: {
       model,
     });
 
-    // Consume the event stream, broadcasting deltas for real-time display
+    // Consume the event stream, broadcasting + buffering deltas for real-time display
     for await (const event of stream.events) {
       if (event.event === "message.delta" && event.delta) {
+        appendStreamBuffer(phaseId, event.delta);
         broadcast(taskId, {
           event: "message.delta",
           data: { phaseId, delta: event.delta, kind },
@@ -213,6 +235,7 @@ async function runPhaseLite(opts: {
     const output = stream.content;
     const usage = stream.usage;
 
+    clearStreamBuffer(phaseId);
     store.completePhase({
       phaseId,
       status: "completed",
@@ -228,6 +251,7 @@ async function runPhaseLite(opts: {
     return { output, usage, sessionId: stream.sessionId };
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
+    clearStreamBuffer(phaseId);
     store.completePhase({
       phaseId,
       status: "failed",

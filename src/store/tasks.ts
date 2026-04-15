@@ -164,13 +164,31 @@ export const useTaskStore = create<TaskStore>()((set, get) => ({
 
       // If running, subscribe to SSE for live updates
       if (detail.status === "running") {
-        // Infer current phase kind from detail so streaming works immediately
+        // Infer current phase kind from detail so streaming works immediately.
+        // Also seed streamingByPhase and streamingText from the buffer the
+        // server merged into running phases' output (so mid-stream opens see
+        // prior content).
         const latestTurn = detail.turns[detail.turns.length - 1];
         if (latestTurn) {
-          const runningPhase = latestTurn.phases.find((p) => p.status === "running");
-          if (runningPhase) {
-            set({ streamingPhaseKind: runningPhase.kind });
+          const seedByPhase: Record<number, string> = {};
+          let seedMainText = "";
+          const reportPhases = ["write", "draft", "revise"];
+
+          for (const phase of latestTurn.phases) {
+            if (phase.status === "running" && phase.output) {
+              seedByPhase[phase.id] = phase.output;
+              if (reportPhases.includes(phase.kind)) {
+                seedMainText = phase.output;
+              }
+            }
           }
+
+          const runningPhase = latestTurn.phases.find((p) => p.status === "running");
+          set({
+            streamingPhaseKind: runningPhase?.kind ?? "",
+            streamingByPhase: seedByPhase,
+            streamingText: seedMainText,
+          });
         }
 
         const unsub = subscribeToTask(
