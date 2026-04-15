@@ -30,7 +30,21 @@ function styleGuide(language?: string): string {
 - **Cross-source synthesis**: when two or more sources touch a theme, combine their evidence into one paragraph. Cite all of them.
 - **Contradictions**: if sources disagree, name the disagreement and take a stance when evidence permits.
 - **Weak signals / implications**: go beyond what's literally in the findings — what does this mean for the reader, practically?
-- **Numbers over adjectives**: prefer "58% improvement, 401 upvotes, $12M raise" over "significant", "popular", "well-funded".`;
+- **Numbers over adjectives**: prefer "58% improvement, 401 upvotes, $12M raise" over "significant", "popular", "well-funded".
+
+## Voice — write like a human analyst, NOT like an AI
+
+AI-generated writing has a distinctive bad smell. Actively resist it:
+
+- **Banned phrases** (do NOT use these or their translations): "值得关注", "核心在于", "本质上", "这说明", "这意味着", "从X来看", "某种程度上", "不难发现", "一方面...另一方面", "正在成为", "结构性的", "范式", "分水岭", "底层逻辑", "赋能", "打通", "落地", "破圈", "闭环". English equivalents equally banned: "it's worth noting", "fundamentally", "at its core", "this suggests that", "this means that", "it's becoming clear", "paradigm shift", "game-changer", "disruptive", "leverages", "unpack".
+- **No meta-commentary after every paragraph**: don't end paragraphs with "这说明...", "这意味着...", "换句话说...". If a fact is worth stating, state it. If a conclusion is worth drawing, draw it ONCE in the section summary, not after every data point.
+- **No stacked adjectives**: "清晰的、稳定的、可控的" is AI filler. Pick ONE precise word or drop the modifier entirely.
+- **No bold-word soup**: at most 1-2 bolded terms per paragraph, and only when the reader truly needs to scan for them. Bolding five phrases per paragraph is AI nervousness, not emphasis.
+- **No "can be categorized into" / "呈现出X种特征"**: don't artificially systematize. If there are three things, list three things. Don't claim they form "three dimensions" or "a framework".
+- **Concrete over abstract**: "Anthropic 在 4/15 发布 Claude Code Routines，文档允许模型按预设流程连续调用 15 个工具" beats "Anthropic 推进了 agent 工作流的产品化进程".
+- **Don't narrate importance**: "this is important because..." is almost always telling, not showing. Replace with the concrete detail that makes it important.
+- **Tight sentences**: kill every phrase that doesn't add information. "在 2026 年 4 月这个时间节点上" → "4 月".
+- **Opinions with teeth**: when the evidence supports a judgment, state it flatly. "GLM-5.1 的 Terminal-Bench 分数很可能在实际生产环境会打折" beats "GLM-5.1 的评分值得进一步观察".`;
 }
 
 // ---------------------------------------------------------------------------
@@ -248,12 +262,14 @@ ${opts.draft}
 
 Produce a **concise** critique (300–500 words max). Focus on the top issues only:
 
-1. **Running-account detection (流水账)** — are sections organized "one-source-per-section" instead of by theme? Does the draft just summarize each finding in sequence without synthesis? This is the #1 problem to flag.
-2. **Weak thesis** — does the TL;DR state a clear takeaway, or just list what was investigated?
-3. **Missing analysis** — where does the draft restate findings without adding interpretation, cross-source connection, or implications?
-4. **Content gaps** — what important aspects are missing?
-5. **Weak claims** — assertions that lack evidence or overhedge ("may", "could", "some").
-6. **Citations** — missing on specific claims, or suspicious sources.
+1. **AI voice detection (AI 味)** — does the draft use phrases like "值得关注", "这说明", "核心在于", "本质上", "正在成为", "一方面...另一方面", "某种程度上", "it's worth noting", "fundamentally", "this suggests that"? Does it bold 5+ words per paragraph? Does it end paragraphs with meta-commentary ("这说明X正在Y")? Does it artificially systematize findings into "N dimensions" / "N 个维度"? Flag every instance — this is a top problem.
+2. **Running-account detection (流水账)** — are sections organized "one-source-per-section" instead of by theme? Does the draft just summarize each finding in sequence without synthesis?
+3. **Abstract over concrete** — does the draft say "推进了 agent 工作流的产品化进程" when it could say "发布了 Claude Code Routines 允许模型连续调用 15 个工具"? Flag abstract generalities that hide concrete details.
+4. **Weak thesis** — does the TL;DR state a clear takeaway, or just list what was investigated?
+5. **Missing analysis** — where does the draft restate findings without adding interpretation, cross-source connection, or implications?
+6. **Content gaps** — what important aspects are missing?
+7. **Weak claims** — assertions that lack evidence or overhedge ("may", "could", "some").
+8. **Citations** — missing on specific claims, or suspicious sources.
 
 End with a **numbered priority fix list** (top 3–5 changes). For each, specify: which section needs work, what's wrong, and what the revised section should do differently.
 
@@ -272,12 +288,14 @@ ${opts.goal}
 
 Produce a **concise** critique (300–500 words max). Focus on the top issues only:
 
-1. **Running-account detection (流水账)** — are sections organized "one-source-per-section" instead of by theme? Does the draft just summarize each finding in sequence without synthesis? This is the #1 problem to flag.
-2. **Weak thesis** — does the TL;DR state a clear takeaway, or just list what was investigated?
-3. **Missing analysis** — where does the draft restate findings without adding interpretation, cross-source connection, or implications?
-4. **Content gaps** — what important aspects are missing?
-5. **Weak claims** — assertions that lack evidence or overhedge ("may", "could", "some").
-6. **Citations** — missing on specific claims, or suspicious sources.
+1. **AI voice detection (AI 味)** — does the draft use phrases like "值得关注", "这说明", "核心在于", "本质上", "正在成为", "一方面...另一方面", "某种程度上", "it's worth noting", "fundamentally", "this suggests that"? Does it bold 5+ words per paragraph? Does it end paragraphs with meta-commentary ("这说明X正在Y")? Does it artificially systematize findings into "N dimensions" / "N 个维度"? Flag every instance — this is a top problem.
+2. **Running-account detection (流水账)** — are sections organized "one-source-per-section" instead of by theme? Does the draft just summarize each finding in sequence without synthesis?
+3. **Abstract over concrete** — does the draft say "推进了 agent 工作流的产品化进程" when it could say "发布了 Claude Code Routines 允许模型连续调用 15 个工具"? Flag abstract generalities that hide concrete details.
+4. **Weak thesis** — does the TL;DR state a clear takeaway, or just list what was investigated?
+5. **Missing analysis** — where does the draft restate findings without adding interpretation, cross-source connection, or implications?
+6. **Content gaps** — what important aspects are missing?
+7. **Weak claims** — assertions that lack evidence or overhedge ("may", "could", "some").
+8. **Citations** — missing on specific claims, or suspicious sources.
 
 End with a **numbered priority fix list** (top 3–5 changes). For each, specify: which section needs work, what's wrong, and what the revised section should do differently.
 
