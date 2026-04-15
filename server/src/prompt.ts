@@ -143,7 +143,16 @@ Approach: ${opts.question.approach}
 - **Timestamp each fact when relevant.** Write "On 2026-04-16, X released Y" not "X recently released Y". Downstream synthesis needs absolute dates.
 - Flag gaps or conflicting sources under "## Unresolved".
 - **300–800 words max.** Be dense, not verbose. Every sentence should carry information.
-- Do NOT repeat the question or goal in your output.`;
+- Do NOT repeat the question or goal in your output.
+
+## Required: preserve raw quotes
+
+After your findings, add a section \`## Raw quotes\` with **3–6 direct excerpts** from the sources you cited. Each quote:
+- In original language (don't translate), inside \`> blockquote\` format
+- Under 200 characters
+- Attribute with source + URL immediately after: \`> "original text" — Source name (URL)\`
+
+These quotes will be used downstream as evidence the final report can cite verbatim. Prefer: product claims from company blogs, numeric results from papers, specific complaints from comment threads, direct statements from founders/researchers. AVOID quotes that are just restating common facts.`;
 }
 
 // ---------------------------------------------------------------------------
@@ -196,6 +205,67 @@ export function compressFindings(
 }
 
 // ---------------------------------------------------------------------------
+// 3a. OUTLINE — produce a structured outline BEFORE prose.
+// Forces commitment to claims + evidence before the LLM starts generating
+// AI-flavored boilerplate. Uses lite phase (chat completions, no tools).
+// ---------------------------------------------------------------------------
+export function outlinePrompt(opts: {
+  goal: string;
+  plan: Plan;
+  findings: { questionId: string; title: string; output: string }[];
+}): string {
+  const compressed = compressFindings(opts.findings);
+  const findingsBlock = compressed
+    .map((f) => `### ${f.questionId}: ${f.title}\n\n${f.output}`)
+    .join("\n\n---\n\n");
+
+  return `# Outline the report
+
+Before writing prose, commit to **what each section will argue** and **what evidence it will use**. Do NOT write paragraphs.
+
+## Goal
+${opts.goal}
+
+## Planned sections
+${opts.plan.sections.map((s) => `- ${s}`).join("\n")}
+
+## Findings
+${findingsBlock}
+
+## Output format
+
+For each section, produce:
+
+\`\`\`
+## <section name>
+claim: <one sentence — the thesis of this section>
+- fact: <short phrase> — <source short name> (<URL or Q-id>)
+- fact: <short phrase> — <source short name> (<URL or Q-id>)
+- fact: ...
+\`\`\`
+
+Rules:
+- Every section must lead with a **claim sentence**. If a section has no claim, merge it or drop it.
+- 2–5 facts per section, each a **short phrase** — not a full sentence. Cite the source.
+- Do NOT write prose, transitions, or commentary. This is a skeleton, not a draft.
+- 2–3 sentences MAX for the TL;DR claim.
+- If two planned sections would make the same argument, merge them.
+
+Example (English but same structure applies for Chinese):
+
+\`\`\`
+## TL;DR
+claim: 本月开源模型的卖点从会聊天转向了能执行任务
+
+## agent 能力成为主战场
+claim: 三个月内发布的顶级开源模型都把 agent 能力放在 README 顶部
+- fact: GLM-5.1 宣传 SWE-Bench 58.4, 多千次 tool calls — hf.co (Q2)
+- fact: MiniMax-M2.7 自称 3 分钟事故恢复 — hf.co (Q2)
+- fact: Claude Code Routines HN 401 upvotes — news.ycombinator.com (Q1)
+\`\`\``;
+}
+
+// ---------------------------------------------------------------------------
 // 3. DRAFT — synthesize plan + compressed findings
 // ---------------------------------------------------------------------------
 export function draftPrompt(opts: {
@@ -203,40 +273,60 @@ export function draftPrompt(opts: {
   context: string;
   plan: Plan;
   findings: { questionId: string; title: string; output: string }[];
+  outline?: string;
   language?: string;
 }): string {
-  // Compress findings before injecting
   const compressed = compressFindings(opts.findings);
   const findingsBlock = compressed
-    .map(
-      (f) => `### ${f.questionId}: ${f.title}\n\n${f.output}`
-    )
+    .map((f) => `### ${f.questionId}: ${f.title}\n\n${f.output}`)
     .join("\n\n---\n\n");
+
+  const outlineBlock = opts.outline
+    ? `\n## Outline to expand (follow this structure — do NOT add or skip sections)\n\n${opts.outline}\n`
+    : "";
 
   return `# Report drafting
 
-You are an analyst writing a synthesized report — not a news aggregator.
+## Writer persona
+
+You write like a senior industry analyst for a publication such as *The Information*, *Stratechery*, or *36氪深度*. Your voice is:
+
+- **Direct**: you state what you think, not what "some may argue".
+- **Specific**: every generalization is backed by a name, number, or quote.
+- **Opinionated**: when the evidence supports a judgment, you take the position. You don't hide behind "值得观察".
+- **Spare**: you kill every word that doesn't earn its place. No "一方面...另一方面" theater.
+- **Unimpressed**: you assume the reader already knows what an LLM is. You don't explain, you analyze.
 
 ## Goal
 
 ${opts.goal}
 ${opts.context ? `\n## Context\n\n${opts.context}\n` : ""}
-
-## Planned sections
-
-${opts.plan.sections.map((s) => `- ${s}`).join("\n")}
-
+${outlineBlock}
 ## Research findings (raw input from parallel investigations)
 
 ${findingsBlock}
 
-## How to synthesize
+## How to write
 
-1. **Read all findings first**. Identify 3-5 **themes or insights** that cut across them.
-2. **Each section = a theme, NOT a question**. If research question Q2 covered "Hugging Face models" and Q3 covered "arXiv papers", but both reveal "open models are pivoting to agent capabilities", that's ONE section, not two.
-3. **Lead each section with the insight**, then support with evidence from multiple findings.
-4. **TL;DR states the thesis** — what's the ONE most important takeaway the reader should walk away with? Not "we investigated X, Y, Z".
-5. **Don't waste prose restating findings**. The reader will read your synthesis, not the raw findings — add interpretation, connections, and implications the findings didn't state directly.
+1. **Follow the outline above verbatim** if provided. Don't add sections. Don't merge sections the outline separates.
+2. **Each section: lead with the claim, then marshal evidence.** Not "A happened. B happened. C happened." but "X is true — A (source), B (source), C (source) all point the same way."
+3. **Use direct quotes** from the raw findings when a source said it more vividly than you could summarize. Keep quotes short (<30 words), in quotation marks, with citation.
+4. **TL;DR: state the thesis in one sentence.** Not "we investigated X, Y, Z". Not "综合来看, 2026-04-16...". Just: what's the single most important thing the reader should know?
+5. **Don't restate findings. Synthesize them.** Draft only adds value if it says something the raw findings didn't state directly.
+
+## Style example — GOOD vs BAD
+
+BAD (AI slop — reject):
+> ## AI 代理能力成为新战场
+>
+> 2026-04-16 的 AI 领域呈现出明显的结构性转变：**模型能力正在从单纯对话向代理执行迁移**。一方面，GLM-5.1 在 README 中强调 agent 能力；另一方面，MiniMax-M2.7 也把 log analysis 作为核心卖点。这在某种程度上说明，开源社区正在对"能执行任务"的模型形成共识。
+
+GOOD (direct, specific):
+> ## Agent 能力取代参数规模成为开源卖点
+>
+> 本周发布的三个主流开源模型都把 agent 能力写进 README 顶部。GLM-5.1 直接标 SWE-Bench 58.4，强调"数百轮 tool calls"（[hf.co/zai-org/GLM-5.1](https://huggingface.co/zai-org/GLM-5.1)）。MiniMax-M2.7 更激进：宣称把事故恢复压缩到"under three minutes"（[hf.co/MiniMaxAI/MiniMax-M2.7](https://huggingface.co/MiniMaxAI/MiniMax-M2.7)）。参数规模、benchmark 平均分——这两个过去的主卖点——几乎消失了。这不代表它们不重要，而是已经沦为背景；真正影响采购决策的指标换了。
+
+Notice in the GOOD example: one bolded phrase, no "值得关注", no "一方面...另一方面", opinions stated flatly, specifics with URLs, final line delivers a judgment.
 
 ${styleGuide(opts.language)}`;
 }
@@ -341,6 +431,37 @@ ${opts.critique}
 - The report must read as a standalone document.
 
 ${styleGuide(opts.language)}`;
+}
+
+// ---------------------------------------------------------------------------
+// 6. EDITOR pass — polish language only, no structural change.
+// Fights AI voice that survived revise. Uses lite phase.
+// ---------------------------------------------------------------------------
+export function editorPrompt(opts: { goal: string; language?: string }): string {
+  return `# Copy edit
+
+You are the copy editor for a top-tier technology publication. The writer submitted a revised draft. Your job: **tighten the language, kill AI voice, preserve all substance**.
+
+## Goal the report addresses
+${opts.goal}
+
+## What to change
+- **Strike banned phrases.** Remove or rewrite every instance of: "值得关注", "核心在于", "本质上", "这说明", "这意味着", "某种程度上", "一方面...另一方面", "正在成为", "结构性", "范式", "不难发现", "从X来看", "it's worth noting", "fundamentally", "this suggests", "this means that", "paradigm shift", "disruptive", "leverages".
+- **Reduce bolding.** Max 2 bolded phrases per paragraph. Strike bolding that's there for AI visual rhythm rather than scannable emphasis.
+- **Break repetitive rhythm.** If three consecutive sentences start with the same connector (然而/同时/此外), rewrite two of them.
+- **Prefer specific over abstract.** Replace "推进了产品化进程" with the concrete action. Replace "生态正在成熟" with the specific evidence of maturation.
+- **Compress.** "在 2026 年 4 月这一时间节点" → "4 月". Kill redundant modifiers. One adjective is plenty.
+- **Kill meta-commentary tails.** Paragraphs ending with "这说明X正在Y" usually say nothing — cut them.
+
+## What NOT to change
+- All facts, numbers, dates, names, citations, URLs must remain exactly as the writer had them.
+- All section headings and ordering stay.
+- The writer's opinions and judgments stay — sharpen their phrasing, don't dilute them.
+- Do not add new citations or claims.
+${opts.language ? `- Language: keep in ${opts.language}.` : ""}
+
+## Output
+Output ONLY the final edited report. No preamble, no change log, no "here's the edited version", no sign-off. Start directly with the \`## TL;DR\` heading.`;
 }
 
 // Slim revise — used with conversation_history that contains draft + critique

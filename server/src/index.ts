@@ -196,8 +196,15 @@ app.post("/api/tasks/:id/retry", (c) => {
         cache.draftOutput = phase.output;
         cache.draftUsage = phase.usage;
       } else if (phase.kind === "critique") {
-        cache.critiqueOutput = phase.output;
-        cache.critiqueUsage = phase.usage;
+        // Outline and Self-critique both have kind="critique"; distinguish by label
+        if (phase.label.startsWith("Outline")) {
+          cache.outlineOutput = phase.output;
+          cache.outlineUsage = phase.usage;
+        } else if (phase.label.startsWith("Self-critique")) {
+          cache.critiqueOutput = phase.output;
+          cache.critiqueUsage = phase.usage;
+        }
+        // Re-critique and other variants are not cached (they depend on prior failed revisions)
       }
     }
   }

@@ -17,6 +17,8 @@ import {
   planPrompt,
   researchPrompt,
   draftPrompt,
+  outlinePrompt,
+  editorPrompt,
   critiquePrompt,
   critiqueInstructionPrompt,
   revisePrompt,
@@ -320,6 +322,8 @@ export interface PipelineCache {
   planOutput?: string;
   planUsage?: TokenUsage;
   researchByBranch?: Map<number, { output: string; usage?: TokenUsage; label: string }>;
+  outlineOutput?: string;
+  outlineUsage?: TokenUsage;
   draftOutput?: string;
   draftUsage?: TokenUsage;
   critiqueOutput?: string;
@@ -517,31 +521,50 @@ async function runStandardMode(
   return result.output;
 }
 
-// ── Deep: plan → research → draft → critique → revise ──────────────────────
+// ── Deep: plan → research → outline → draft → critique → revise → editor ─
 async function runDeepMode(
   opts: PipelineOpts,
   usages: (TokenUsage | undefined)[]
 ): Promise<string> {
   const { plan, researchResults } = await runPlanAndResearch(opts, usages);
   const { cache } = opts;
+  const findings = researchResults.map((r) => ({ questionId: r.question.id, title: r.question.title, output: r.output }));
 
-  // ── Draft (skip if cached) ──
+  // ── Outline (lite phase, forces commitment to claims before prose) ──
+  let outlineText: string;
+  if (cache?.outlineOutput) {
+    replayPhase(opts.turnId, opts.taskId, {
+      seq: 2, branch: 0, kind: "critique", label: "Outline (cached)",
+      output: cache.outlineOutput, usage: cache.outlineUsage,
+    });
+    usages.push(cache.outlineUsage);
+    outlineText = cache.outlineOutput;
+  } else {
+    const outlinePhase = store.addPhase({ turnId: opts.turnId, seq: 2, branch: 0, kind: "critique", label: "Outline", createdAt: Date.now() });
+    const outlineResult = await runPhaseLite({
+      taskId: opts.taskId, phaseId: outlinePhase.id, kind: "critique",
+      prompt: outlinePrompt({ goal: opts.goal, plan, findings }),
+    });
+    usages.push(outlineResult.usage);
+    outlineText = outlineResult.output;
+  }
+
+  // ── Draft (seeded with outline) ──
   const draftPromptText = draftPrompt({
     goal: opts.goal, context: opts.context, plan,
-    findings: researchResults.map((r) => ({ questionId: r.question.id, title: r.question.title, output: r.output })),
-    language: opts.language,
+    findings, outline: outlineText, language: opts.language,
   });
 
   let draftOutput: string;
   if (cache?.draftOutput) {
     replayPhase(opts.turnId, opts.taskId, {
-      seq: 2, branch: 0, kind: "draft", label: "Draft report (cached)",
+      seq: 3, branch: 0, kind: "draft", label: "Draft report (cached)",
       output: cache.draftOutput, usage: cache.draftUsage,
     });
     usages.push(cache.draftUsage);
     draftOutput = cache.draftOutput;
   } else {
-    const draftPhase = store.addPhase({ turnId: opts.turnId, seq: 2, branch: 0, kind: "draft", label: "Draft report", createdAt: Date.now() });
+    const draftPhase = store.addPhase({ turnId: opts.turnId, seq: 3, branch: 0, kind: "draft", label: "Draft report", createdAt: Date.now() });
     const draftResult = await runPhase({
       taskId: opts.taskId, phaseId: draftPhase.id, kind: "draft",
       prompt: draftPromptText,
@@ -551,17 +574,16 @@ async function runDeepMode(
   }
 
   // ── Critique (skip if cached) ──
-  // Use slim instruction + conversation history to avoid re-sending the draft
   let critiqueOutput: string;
   if (cache?.critiqueOutput) {
     replayPhase(opts.turnId, opts.taskId, {
-      seq: 3, branch: 0, kind: "critique", label: "Self-critique (cached)",
+      seq: 4, branch: 0, kind: "critique", label: "Self-critique (cached)",
       output: cache.critiqueOutput, usage: cache.critiqueUsage,
     });
     usages.push(cache.critiqueUsage);
     critiqueOutput = cache.critiqueOutput;
   } else {
-    const critiquePhase = store.addPhase({ turnId: opts.turnId, seq: 3, branch: 0, kind: "critique", label: "Self-critique", createdAt: Date.now() });
+    const critiquePhase = store.addPhase({ turnId: opts.turnId, seq: 4, branch: 0, kind: "critique", label: "Self-critique", createdAt: Date.now() });
     const critiqueResult = await runPhaseLite({
       taskId: opts.taskId, phaseId: critiquePhase.id, kind: "critique",
       prompt: critiqueInstructionPrompt({ goal: opts.goal }),
@@ -578,7 +600,8 @@ async function runDeepMode(
   // ── Revise + quality loop ──
   let currentDraft = draftOutput;
   let currentCritique = critiqueOutput;
-  let seqOffset = 4;
+  let seqOffset = 5;
+  let finalRevision = draftOutput;
 
   for (let iteration = 0; iteration <= MAX_QUALITY_ITERATIONS; iteration++) {
     const isRetry = iteration > 0;
@@ -598,6 +621,7 @@ async function runDeepMode(
       ],
     });
     usages.push(reviseResult.usage);
+    finalRevision = reviseResult.output;
 
     // D. Quality gate — evaluate if report is good enough
     if (iteration < MAX_QUALITY_ITERATIONS) {
@@ -607,9 +631,7 @@ async function runDeepMode(
         data: { score: quality.score, pass: quality.pass, issues: quality.issues, iteration: iteration + 1 },
       });
 
-      if (quality.pass) {
-        return reviseResult.output;
-      }
+      if (quality.pass) break;
 
       // Not good enough — run another critique→revise cycle
       seqOffset += 2;
@@ -628,11 +650,24 @@ async function runDeepMode(
       usages.push(reCritiqueResult.usage);
       currentCritique = reCritiqueResult.output;
     } else {
-      return reviseResult.output;
+      break;
     }
   }
 
-  return currentDraft; // fallback (shouldn't reach here)
+  // ── Editor pass (polish language only, no content change) ──
+  const editorPhase = store.addPhase({ turnId: opts.turnId, seq: seqOffset + 1, branch: 0, kind: "revise", label: "Copy edit", createdAt: Date.now() });
+  const editorResult = await runPhaseLite({
+    taskId: opts.taskId, phaseId: editorPhase.id, kind: "revise",
+    prompt: editorPrompt({ goal: opts.goal, language: opts.language }),
+    messages: [
+      { role: "user", content: "Here is the revised report for copy editing." },
+      { role: "assistant", content: finalRevision },
+      { role: "user", content: editorPrompt({ goal: opts.goal, language: opts.language }) },
+    ],
+  });
+  usages.push(editorResult.usage);
+
+  return editorResult.output || finalRevision;
 }
 
 // ---------------------------------------------------------------------------
