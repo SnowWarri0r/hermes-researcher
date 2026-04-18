@@ -2,6 +2,21 @@ import { store, db } from "./db.ts";
 import { hermesChat } from "./hermes.ts";
 import { getModelForPhase } from "./settings.ts";
 import { getEmbedding, isEmbeddingConfigured } from "./embedding.ts";
+import { jsonrepair } from "jsonrepair";
+
+function parseJsonRobust(raw: string): Record<string, unknown> | null {
+  // Try ```json block first, then raw content
+  const jsonBlock = raw.match(/```json\s*([\s\S]*?)```/i);
+  const candidate = (jsonBlock ? jsonBlock[1] : raw).trim();
+  try { return JSON.parse(candidate); } catch { /* fall through */ }
+  try { return JSON.parse(jsonrepair(candidate)); } catch { /* fall through */ }
+  // Last resort: find first { ... } in the raw text
+  const braceMatch = raw.match(/\{[\s\S]*\}/);
+  if (braceMatch) {
+    try { return JSON.parse(jsonrepair(braceMatch[0])); } catch { /* give up */ }
+  }
+  return null;
+}
 
 /**
  * After a task completes, extract key findings into the knowledge base.
@@ -42,11 +57,8 @@ Rules:
       model,
     });
 
-    const jsonBlock = content.match(/```json\s*([\s\S]*?)```/i);
-    if (!jsonBlock) return;
-
-    const parsed = JSON.parse(jsonBlock[1]);
-    if (!Array.isArray(parsed.entries)) return;
+    const parsed = parseJsonRobust(content) as { entries?: Record<string, unknown>[] } | null;
+    if (!parsed || !Array.isArray(parsed.entries)) return;
 
     for (const entry of parsed.entries.slice(0, 6)) {
       if (!entry.topic || !entry.summary) continue;
@@ -97,11 +109,8 @@ Be precise. Only extract if there's a concrete, reusable finding.`,
       model,
     });
 
-    const jsonBlock = content.match(/```json\s*([\s\S]*?)```/i);
-    if (!jsonBlock) return;
-
-    const parsed = JSON.parse(jsonBlock[1]);
-    if (!Array.isArray(parsed.entries)) return;
+    const parsed = parseJsonRobust(content) as { entries?: Record<string, unknown>[] } | null;
+    if (!parsed || !Array.isArray(parsed.entries)) return;
 
     for (const entry of parsed.entries.slice(0, 2)) {
       if (!entry.topic || !entry.summary) continue;
@@ -131,7 +140,7 @@ async function upsertKnowledge(opts: {
   const embedding = await getEmbedding(embeddingText);
 
   if (embedding) {
-    const similar = store.searchKnowledgeByVector(embedding, 1, 0.85);
+    const similar = store.searchKnowledgeByVector(embedding, 1, 0.96);
     if (similar.length > 0) {
       // Very similar entry exists — merge
       const merged = similar[0];
