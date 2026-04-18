@@ -93,9 +93,12 @@ export function TaskCard({ task }: { task: Task }) {
                 {duration}s
               </span>
             )}
-            {task.usage?.total_tokens !== undefined && (
-              <span className="text-[11px] font-mono text-slate-steel">
-                {formatTokens(task.usage.total_tokens)} tok
+            {(task.usage?.input_tokens !== undefined || task.usage?.output_tokens !== undefined) && (
+              <span
+                className="text-[11px] font-mono text-slate-steel"
+                title={`Cumulative across all phases and tool-call rounds.\nInput: ${task.usage.input_tokens?.toLocaleString() ?? "?"}\nOutput: ${task.usage.output_tokens?.toLocaleString() ?? "?"}\nNote: provider prompt caching typically bills input at 10-20% of this.`}
+              >
+                {formatTokens(task.usage.input_tokens ?? 0)}↑ / {formatTokens(task.usage.output_tokens ?? 0)}↓
               </span>
             )}
             <span className="text-[11px] text-slate-steel/60 ml-auto opacity-0 group-hover:opacity-100 transition-opacity">

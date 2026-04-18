@@ -205,9 +205,12 @@ export function TaskDetail() {
               {totalDuration && (
                 <span className="text-[11px] font-mono text-slate-steel">{totalDuration}s</span>
               )}
-              {task.usage?.total_tokens !== undefined && (
-                <span className="text-[11px] font-mono text-slate-steel" title={`in ${task.usage.input_tokens ?? "?"} / out ${task.usage.output_tokens ?? "?"}`}>
-                  {task.usage.total_tokens.toLocaleString()} tok
+              {(task.usage?.input_tokens !== undefined || task.usage?.output_tokens !== undefined) && (
+                <span
+                  className="text-[11px] font-mono text-slate-steel"
+                  title={`Cumulative across all phases and tool-call rounds.\nInput: ${task.usage.input_tokens?.toLocaleString() ?? "?"} (each agent tool round re-sends the full conversation)\nOutput: ${task.usage.output_tokens?.toLocaleString() ?? "?"}\nTotal: ${task.usage.total_tokens?.toLocaleString() ?? "?"}\n\nProvider prompt caching typically bills input at ~10-20% of this figure.`}
+                >
+                  {(task.usage.input_tokens ?? 0).toLocaleString()} ↑ / {(task.usage.output_tokens ?? 0).toLocaleString()} ↓
                 </span>
               )}
               <span className="text-[10px] font-mono text-slate-steel/50 px-1.5 py-0.5 rounded bg-carbon border border-charcoal-subtle">{task.mode}</span>
