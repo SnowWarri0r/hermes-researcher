@@ -1,6 +1,8 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import remarkMath from "remark-math";
+import rehypeKatex from "rehype-katex";
 import { useTaskStore } from "../../store/tasks";
 import { StatusBadge } from "../common/Badge";
 import { PipelineView } from "./PipelineView";
@@ -449,7 +451,7 @@ function ReportView({
             <ReportDiff oldText={previousReport} newText={displayReport} />
           ) : (
             <div className="prose-hermes">
-              <ReactMarkdown remarkPlugins={[remarkGfm]} components={mdComponents}>
+              <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex]} components={mdComponents}>
                 {displayReport}
               </ReactMarkdown>
               {isStreaming && <span className="inline-block w-2 h-4 bg-emerald-signal/60 animate-pulse ml-0.5" />}
