@@ -260,7 +260,7 @@ export const useTaskStore = create<TaskStore>()((set, get) => ({
   },
 }));
 
-// Global poll: refresh list when there are running tasks
+// Global poll: refresh list + active detail when tasks are running
 let pollTimer: ReturnType<typeof setInterval> | null = null;
 
 export function startPolling() {
@@ -269,5 +269,10 @@ export function startPolling() {
     const state = useTaskStore.getState();
     const listHasInFlight = state.tasks.some((t) => t.status === "running");
     if (listHasInFlight) state.refreshList();
-  }, 3000);
+
+    // Keep pipeline view fresh while the active task is running
+    if (state.activeTaskId && state.activeTaskDetail?.status === "running") {
+      state.refreshActive();
+    }
+  }, 2000);
 }
