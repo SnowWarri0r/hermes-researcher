@@ -29,6 +29,7 @@ export function TaskDetail() {
   const loadError = useTaskStore((s) => s.activeTaskError);
   const streamingText = useTaskStore((s) => s.streamingText);
   const streamingPhaseKind = useTaskStore((s) => s.streamingPhaseKind);
+  const streamingByPhase = useTaskStore((s) => s.streamingByPhase);
   const storeCloseTask = useTaskStore((s) => s.closeTask);
   const followup = useTaskStore((s) => s.followup);
   const retry = useTaskStore((s) => s.retry);
@@ -380,7 +381,7 @@ export function TaskDetail() {
               {viewingTurn && viewingTurn.phases.length > 0 && (
                 <div>
                   <div className="text-xs font-medium text-slate-steel uppercase tracking-wider mb-2">Pipeline · v{viewingTurn.seq + 1}</div>
-                  <PipelineView phases={viewingTurn.phases} streamingText={streamingText} streamingPhaseKind={streamingPhaseKind} />
+                  <PipelineView phases={viewingTurn.phases} streamingText={streamingText} streamingPhaseKind={streamingPhaseKind} streamingByPhase={streamingByPhase} />
                 </div>
               )}
             </div>
