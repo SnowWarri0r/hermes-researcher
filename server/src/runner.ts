@@ -1,5 +1,9 @@
 import { store, db } from "./db.ts";
-import { streamHermesEvents, startHermesRun } from "./hermes.ts";
+import {
+  streamHermesEvents,
+  startHermesRun,
+  hermesChat,
+} from "./hermes.ts";
 import {
   planPrompt,
   researchPrompt,
@@ -9,6 +13,7 @@ import {
   directReportPrompt,
   followupContextPrompt,
   parsePlan,
+  isMinorRefinement,
 } from "./prompt.ts";
 import type {
   Phase,
@@ -144,6 +149,70 @@ async function runPhase(opts: {
   return { output: finalOutput, usage: finalUsage };
 }
 
+/**
+ * Lightweight phase: uses chat completions (no tools/SSE).
+ * ~30k tokens cheaper per call because no hermes system prompt overhead
+ * when sharing a session. Ideal for plan, critique, and other text-only phases.
+ */
+async function runPhaseLite(opts: {
+  taskId: string;
+  phaseId: number;
+  kind: string;
+  prompt: string;
+  sessionId?: string;
+}): Promise<{ output: string; usage?: TokenUsage; sessionId: string }> {
+  const { taskId, phaseId, kind } = opts;
+
+  // Mark running with a synthetic run ID (no real hermes run)
+  const syntheticRunId = `lite_${phaseId}_${Date.now()}`;
+  store.markPhaseRunning(phaseId, syntheticRunId);
+
+  broadcast(taskId, {
+    event: "phase.started",
+    data: { phaseId, runId: syntheticRunId, kind },
+  });
+
+  try {
+    const result = await hermesChat({
+      message: opts.prompt,
+      sessionId: opts.sessionId,
+    });
+
+    const completedAt = Date.now();
+    store.completePhase({
+      phaseId,
+      status: "completed",
+      output: result.content,
+      completedAt,
+      usage: result.usage,
+    });
+    broadcast(taskId, {
+      event: "phase.completed",
+      data: { phaseId, usage: result.usage },
+    });
+
+    return {
+      output: result.content,
+      usage: result.usage,
+      sessionId: result.sessionId,
+    };
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    store.completePhase({
+      phaseId,
+      status: "failed",
+      output: "",
+      completedAt: Date.now(),
+      error: msg,
+    });
+    broadcast(taskId, {
+      event: "phase.failed",
+      data: { phaseId, error: msg },
+    });
+    throw new Error(msg);
+  }
+}
+
 export function cancelPhase(phaseId: number) {
   phaseControllers.get(phaseId)?.abort();
 }
@@ -181,9 +250,17 @@ interface PipelineOpts {
 export async function runPipeline(opts: PipelineOpts): Promise<void> {
   const isFollowup = Boolean(opts.priorReport && opts.followupMessage);
 
+  // Followup fast path: minor refinements skip plan+research
+  const useMinorPath =
+    isFollowup &&
+    opts.mode !== "quick" &&
+    isMinorRefinement(opts.followupMessage!);
+
+  const effectiveMode = useMinorPath ? "minor-followup" : opts.mode;
+
   broadcast(opts.taskId, {
     event: "pipeline.started",
-    data: { turnId: opts.turnId, mode: opts.mode, isFollowup },
+    data: { turnId: opts.turnId, mode: effectiveMode, isFollowup },
   });
 
   const usages: (TokenUsage | undefined)[] = [];
@@ -192,6 +269,8 @@ export async function runPipeline(opts: PipelineOpts): Promise<void> {
     let finalReport = "";
     if (opts.mode === "quick") {
       finalReport = await runQuickMode(opts, usages);
+    } else if (useMinorPath) {
+      finalReport = await runMinorFollowup(opts, usages);
     } else if (opts.mode === "standard") {
       finalReport = await runStandardMode(opts, usages);
     } else {
@@ -256,6 +335,54 @@ async function runQuickMode(
   });
   usages.push(result.usage);
   return result.output;
+}
+
+// ── Minor followup: critique + revise only (skip plan/research) ─────────────
+async function runMinorFollowup(
+  opts: PipelineOpts,
+  usages: (TokenUsage | undefined)[]
+): Promise<string> {
+  const critiquePhase = store.addPhase({
+    turnId: opts.turnId,
+    seq: 0,
+    branch: 0,
+    kind: "critique",
+    label: "Review changes needed",
+    createdAt: Date.now(),
+  });
+
+  const critiqueResult = await runPhaseLite({
+    taskId: opts.taskId,
+    phaseId: critiquePhase.id,
+    kind: "critique",
+    prompt: critiquePrompt({ goal: `${opts.goal}\n\nRefinement: ${opts.followupMessage}`, draft: opts.priorReport! }),
+  });
+  usages.push(critiqueResult.usage);
+
+  const revisePhase = store.addPhase({
+    turnId: opts.turnId,
+    seq: 1,
+    branch: 0,
+    kind: "revise",
+    label: "Apply changes",
+    createdAt: Date.now(),
+  });
+
+  const reviseResult = await runPhase({
+    taskId: opts.taskId,
+    phaseId: revisePhase.id,
+    kind: "revise",
+    prompt: revisePrompt({
+      goal: opts.goal,
+      context: opts.context,
+      draft: opts.priorReport!,
+      critique: critiqueResult.output,
+      toolsets: opts.toolsets,
+      language: opts.language,
+    }),
+  });
+  usages.push(reviseResult.usage);
+  return reviseResult.output;
 }
 
 // ── Standard: plan → parallel research → draft ──────────────────────────────
@@ -335,7 +462,8 @@ async function runDeepMode(
     label: "Self-critique",
     createdAt: Date.now(),
   });
-  const critiqueResult = await runPhase({
+  // Critique doesn't need tools — use lightweight chat
+  const critiqueResult = await runPhaseLite({
     taskId: opts.taskId,
     phaseId: critiquePhase.id,
     kind: "critique",
@@ -401,7 +529,8 @@ async function runPlanAndResearch(
       })
     : planPrompt({ goal, context, toolsets, language: opts.language });
 
-  const planResult = await runPhase({
+  // Plan doesn't need tools — use lightweight chat completions
+  const planResult = await runPhaseLite({
     taskId,
     phaseId: planPhase.id,
     kind: "plan",
