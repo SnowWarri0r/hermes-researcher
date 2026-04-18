@@ -1,5 +1,16 @@
 # Hermes Dashboard
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Node.js](https://img.shields.io/badge/Node.js-%3E%3D18-339933?logo=node.js&logoColor=white)](https://nodejs.org/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.8-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+[![React](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=black)](https://react.dev/)
+[![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS-v4-06B6D4?logo=tailwindcss&logoColor=white)](https://tailwindcss.com/)
+[![GitHub stars](https://img.shields.io/github/stars/SnowWarri0r/hermes-dashboard?style=social)](https://github.com/SnowWarri0r/hermes-dashboard/stargazers)
+[![GitHub issues](https://img.shields.io/github/issues/SnowWarri0r/hermes-dashboard)](https://github.com/SnowWarri0r/hermes-dashboard/issues)
+[![GitHub last commit](https://img.shields.io/github/last-commit/SnowWarri0r/hermes-dashboard)](https://github.com/SnowWarri0r/hermes-dashboard/commits/main)
+
+[![Star History Chart](https://api.star-history.com/svg?repos=SnowWarri0r/hermes-dashboard&type=Date)](https://star-history.com/#SnowWarri0r/hermes-dashboard&Date)
+
 A deep-research task delegation frontend for [Hermes Agent](https://github.com/NousResearch/hermes-agent). Dispatch research tasks, watch them execute through a multi-phase pipeline, and refine reports iteratively.
 
 ```
