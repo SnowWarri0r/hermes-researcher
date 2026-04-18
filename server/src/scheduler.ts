@@ -157,24 +157,45 @@ async function executeSchedule(schedule: Schedule): Promise<void> {
       mode: schedule.mode,
       language: schedule.language || undefined,
     });
-
-    // Deliver to Discord if configured
-    if (schedule.discordWebhook) {
-      const task = store.getTask(taskId);
-      if (task?.result) {
-        await sendToDiscord({
-          webhookUrl: schedule.discordWebhook,
-          goal,
-          report: task.result,
-          mode: schedule.mode,
-          duration: task.completedAt && task.createdAt ? (task.completedAt - task.createdAt) / 1000 : undefined,
-          tokens: task.usage?.total_tokens,
-        });
-      }
-    }
   } catch (e) {
     console.error(`[scheduler] "${schedule.name}" failed:`, e);
   }
+
+  // Deliver to Discord regardless of trigger source (scheduler, retry, manual)
+  await deliverIfNeeded(schedule, taskId, goal);
+}
+
+async function deliverIfNeeded(schedule: Schedule, taskId: string, goal: string): Promise<void> {
+  if (!schedule.discordWebhook) return;
+
+  const task = store.getTask(taskId);
+  if (!task) return;
+
+  if (task.result) {
+    await sendToDiscord({
+      webhookUrl: schedule.discordWebhook,
+      goal,
+      report: task.result,
+      mode: schedule.mode,
+      duration: task.completedAt && task.createdAt ? (task.completedAt - task.createdAt) / 1000 : undefined,
+      tokens: task.usage?.total_tokens,
+    });
+  } else if (task.status === "failed") {
+    const lastTurn = task.turns[task.turns.length - 1];
+    const errorMsg = lastTurn?.error || "Unknown error";
+    await sendToDiscord({
+      webhookUrl: schedule.discordWebhook,
+      goal: `[FAILED] ${goal}`,
+      report: `Pipeline failed.\n\n**Error:** ${errorMsg}`,
+      mode: schedule.mode,
+    });
+  }
+}
+
+/** Find the schedule associated with a task (if any). */
+export function findScheduleByTaskId(taskId: string): Schedule | null {
+  const row = db.prepare(`SELECT * FROM schedules WHERE last_task_id = ?`).get(taskId) as ScheduleRow | undefined;
+  return row ? rowToSchedule(row) : null;
 }
 
 // ── Cron job management ──
