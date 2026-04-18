@@ -14,6 +14,8 @@ import {
   getTemplates,
   addTemplate,
   deleteTemplate,
+  getHermesMaxConcurrentRuns,
+  setHermesMaxConcurrentRuns,
 } from "./settings.ts";
 import {
   runPipeline,
@@ -21,6 +23,7 @@ import {
   cancelTaskPhases,
   resumeTracking,
 } from "./runner.ts";
+import type { PipelineCache } from "./runner.ts";
 import type {
   CreateTaskRequest,
   FollowupRequest,
@@ -158,6 +161,51 @@ app.post("/api/tasks/:id/cancel", (c) => {
   return c.json({ ok: true });
 });
 
+app.post("/api/tasks/:id/retry", (c) => {
+  const id = c.req.param("id");
+  const task = store.getTask(id);
+  if (!task) return c.json({ error: "not found" }, 404);
+  if (task.status === "running") return c.json({ error: "still running" }, 409);
+
+  // Extract completed phases from last turn as cache
+  const lastTurn = task.turns[task.turns.length - 1];
+  const cache: PipelineCache = {};
+  if (lastTurn) {
+    for (const phase of lastTurn.phases) {
+      if (phase.status !== "completed") continue;
+      if (phase.kind === "plan") {
+        cache.planOutput = phase.output;
+        cache.planUsage = phase.usage;
+      } else if (phase.kind === "research") {
+        if (!cache.researchByBranch) cache.researchByBranch = new Map();
+        cache.researchByBranch.set(phase.branch, { output: phase.output, usage: phase.usage, label: phase.label });
+      } else if (phase.kind === "draft") {
+        cache.draftOutput = phase.output;
+        cache.draftUsage = phase.usage;
+      } else if (phase.kind === "critique") {
+        cache.critiqueOutput = phase.output;
+        cache.critiqueUsage = phase.usage;
+      }
+    }
+  }
+
+  const createdAt = Date.now();
+  const turn = store.addTurn({ taskId: id, userMessage: task.goal, createdAt });
+
+  runPipeline({
+    taskId: id,
+    turnId: turn.id,
+    goal: task.goal,
+    context: task.context || "",
+    toolsets: task.toolsets,
+    mode: task.mode,
+    language: task.language || undefined,
+    cache,
+  }).catch(() => {});
+
+  return c.json(store.getTask(id));
+});
+
 app.delete("/api/tasks/:id", (c) => {
   const id = c.req.param("id");
   cancelTaskPhases(id);
@@ -178,6 +226,21 @@ app.patch("/api/settings", async (c) => {
   };
   const updated = saveSettings(body);
   return c.json(updated);
+});
+
+// ---------------------------------------------------------------------------
+// Gateway concurrency
+// ---------------------------------------------------------------------------
+app.get("/api/gateway", (c) => {
+  return c.json({ maxConcurrentRuns: getHermesMaxConcurrentRuns() });
+});
+
+app.patch("/api/gateway", async (c) => {
+  const body = (await c.req.json()) as { maxConcurrentRuns?: number };
+  if (body.maxConcurrentRuns !== undefined) {
+    setHermesMaxConcurrentRuns(body.maxConcurrentRuns);
+  }
+  return c.json({ maxConcurrentRuns: getHermesMaxConcurrentRuns() });
 });
 
 // ---------------------------------------------------------------------------

@@ -4,8 +4,9 @@ import {
   streamHermesEvents,
   startHermesRun,
   hermesChat,
+  hermesChatStream,
 } from "./hermes.ts";
-import { getModelForPhase } from "./settings.ts";
+import { getModelForPhase, getMaxParallelResearch } from "./settings.ts";
 import {
   extractKnowledge,
   extractPhaseKnowledge,
@@ -16,7 +17,9 @@ import {
   researchPrompt,
   draftPrompt,
   critiquePrompt,
+  critiqueInstructionPrompt,
   revisePrompt,
+  reviseInstructionPrompt,
   directReportPrompt,
   followupContextPrompt,
   parsePlan,
@@ -24,12 +27,15 @@ import {
 } from "./prompt.ts";
 import type {
   Phase,
+  PhaseKind,
   TaskMode,
   TaskEvent,
   TokenUsage,
 } from "../../shared/types.ts";
 
-const MAX_PARALLEL_RESEARCH = 5;
+function getMaxResearch(): number {
+  return getMaxParallelResearch();
+}
 
 // ---------------------------------------------------------------------------
 // Broadcast channel
@@ -77,11 +83,12 @@ async function runPhase(opts: {
   phaseId: number;
   kind: string;
   prompt: string;
+  conversationHistory?: { role: string; content: string }[];
 }): Promise<{ output: string; usage?: TokenUsage }> {
   const { taskId, phaseId, kind, prompt } = opts;
 
   const model = getModelForPhase(kind);
-  const runId = await startHermesRun(prompt, model);
+  const runId = await startHermesRun(prompt, model, opts.conversationHistory);
   store.markPhaseRunning(phaseId, runId);
 
   broadcast(taskId, {
@@ -158,20 +165,20 @@ async function runPhase(opts: {
 }
 
 /**
- * Lightweight phase: uses chat completions (no tools/SSE).
- * ~30k tokens cheaper per call because no hermes system prompt overhead
- * when sharing a session. Ideal for plan, critique, and other text-only phases.
+ * Lightweight phase: uses streaming chat completions (no tools).
+ * Broadcasts message.delta events so the frontend can show real-time progress.
+ * Ideal for plan, critique, and other text-only phases.
  */
 async function runPhaseLite(opts: {
   taskId: string;
   phaseId: number;
   kind: string;
   prompt: string;
+  messages?: { role: string; content: string }[];
   sessionId?: string;
 }): Promise<{ output: string; usage?: TokenUsage; sessionId: string }> {
   const { taskId, phaseId, kind } = opts;
 
-  // Mark running with a synthetic run ID (no real hermes run)
   const syntheticRunId = `lite_${phaseId}_${Date.now()}`;
   store.markPhaseRunning(phaseId, syntheticRunId);
 
@@ -182,30 +189,40 @@ async function runPhaseLite(opts: {
 
   try {
     const model = getModelForPhase(opts.kind);
-    const result = await hermesChat({
+    const stream = await hermesChatStream({
       message: opts.prompt,
+      messages: opts.messages,
       sessionId: opts.sessionId,
       model,
     });
 
+    // Consume the event stream, broadcasting deltas for real-time display
+    for await (const event of stream.events) {
+      if (event.event === "message.delta" && event.delta) {
+        broadcast(taskId, {
+          event: "message.delta",
+          data: { phaseId, delta: event.delta, kind },
+        });
+      }
+    }
+
     const completedAt = Date.now();
+    const output = stream.content;
+    const usage = stream.usage;
+
     store.completePhase({
       phaseId,
       status: "completed",
-      output: result.content,
+      output,
       completedAt,
-      usage: result.usage,
+      usage,
     });
     broadcast(taskId, {
       event: "phase.completed",
-      data: { phaseId, usage: result.usage },
+      data: { phaseId, usage },
     });
 
-    return {
-      output: result.content,
-      usage: result.usage,
-      sessionId: result.sessionId,
-    };
+    return { output, usage, sessionId: stream.sessionId };
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     store.completePhase({
@@ -243,8 +260,45 @@ function sumUsage(usages: (TokenUsage | undefined)[]): TokenUsage {
 }
 
 // ---------------------------------------------------------------------------
+// Replay a cached phase (for retry)
+// ---------------------------------------------------------------------------
+function replayPhase(
+  turnId: number,
+  taskId: string,
+  opts: { seq: number; branch: number; kind: PhaseKind; label: string; output: string; usage?: TokenUsage }
+): void {
+  const phase = store.addPhase({
+    turnId,
+    seq: opts.seq,
+    branch: opts.branch,
+    kind: opts.kind,
+    label: opts.label,
+    createdAt: Date.now(),
+  });
+  store.completePhase({
+    phaseId: phase.id,
+    status: "completed",
+    output: opts.output,
+    completedAt: Date.now(),
+    usage: opts.usage,
+  });
+  broadcast(taskId, { event: "phase.started", data: { phaseId: phase.id, kind: opts.kind } });
+  broadcast(taskId, { event: "phase.completed", data: { phaseId: phase.id, usage: opts.usage } });
+}
+
+// ---------------------------------------------------------------------------
 // Pipeline orchestrator with mode selection
 // ---------------------------------------------------------------------------
+export interface PipelineCache {
+  planOutput?: string;
+  planUsage?: TokenUsage;
+  researchByBranch?: Map<number, { output: string; usage?: TokenUsage; label: string }>;
+  draftOutput?: string;
+  draftUsage?: TokenUsage;
+  critiqueOutput?: string;
+  critiqueUsage?: TokenUsage;
+}
+
 interface PipelineOpts {
   taskId: string;
   turnId: number;
@@ -255,6 +309,7 @@ interface PipelineOpts {
   language?: string;
   priorReport?: string;
   followupMessage?: string;
+  cache?: PipelineCache;
 }
 
 export async function runPipeline(opts: PipelineOpts): Promise<void> {
@@ -441,76 +496,78 @@ async function runDeepMode(
   usages: (TokenUsage | undefined)[]
 ): Promise<string> {
   const { plan, researchResults } = await runPlanAndResearch(opts, usages);
+  const { cache } = opts;
 
-  const draftPhase = store.addPhase({
-    turnId: opts.turnId,
-    seq: 2,
-    branch: 0,
-    kind: "draft",
-    label: "Draft report",
-    createdAt: Date.now(),
+  // ── Draft (skip if cached) ──
+  const draftPromptText = draftPrompt({
+    goal: opts.goal, context: opts.context, plan,
+    findings: researchResults.map((r) => ({ questionId: r.question.id, title: r.question.title, output: r.output })),
+    language: opts.language,
   });
-  const draftResult = await runPhase({
-    taskId: opts.taskId,
-    phaseId: draftPhase.id,
-    kind: "draft",
-    prompt: draftPrompt({
-      goal: opts.goal,
-      context: opts.context,
-      plan,
-      findings: researchResults.map((r) => ({
-        questionId: r.question.id,
-        title: r.question.title,
-        output: r.output,
-      })),
-      language: opts.language,
-    }),
-  });
-  usages.push(draftResult.usage);
 
-  const critiquePhase = store.addPhase({
-    turnId: opts.turnId,
-    seq: 3,
-    branch: 0,
-    kind: "critique",
-    label: "Self-critique",
-    createdAt: Date.now(),
-  });
-  // Critique doesn't need tools — use lightweight chat
-  const critiqueResult = await runPhaseLite({
-    taskId: opts.taskId,
-    phaseId: critiquePhase.id,
-    kind: "critique",
-    prompt: critiquePrompt({ goal: opts.goal, draft: draftResult.output }),
-  });
-  usages.push(critiqueResult.usage);
+  let draftOutput: string;
+  if (cache?.draftOutput) {
+    replayPhase(opts.turnId, opts.taskId, {
+      seq: 2, branch: 0, kind: "draft", label: "Draft report (cached)",
+      output: cache.draftOutput, usage: cache.draftUsage,
+    });
+    usages.push(cache.draftUsage);
+    draftOutput = cache.draftOutput;
+  } else {
+    const draftPhase = store.addPhase({ turnId: opts.turnId, seq: 2, branch: 0, kind: "draft", label: "Draft report", createdAt: Date.now() });
+    const draftResult = await runPhase({
+      taskId: opts.taskId, phaseId: draftPhase.id, kind: "draft",
+      prompt: draftPromptText,
+    });
+    usages.push(draftResult.usage);
+    draftOutput = draftResult.output;
+  }
 
-  const revisePhase = store.addPhase({
-    turnId: opts.turnId,
-    seq: 4,
-    branch: 0,
-    kind: "revise",
-    label: "Final revision",
-    createdAt: Date.now(),
-  });
+  // ── Critique (skip if cached) ──
+  // Use slim instruction + conversation history to avoid re-sending the draft
+  let critiqueOutput: string;
+  if (cache?.critiqueOutput) {
+    replayPhase(opts.turnId, opts.taskId, {
+      seq: 3, branch: 0, kind: "critique", label: "Self-critique (cached)",
+      output: cache.critiqueOutput, usage: cache.critiqueUsage,
+    });
+    usages.push(cache.critiqueUsage);
+    critiqueOutput = cache.critiqueOutput;
+  } else {
+    const critiquePhase = store.addPhase({ turnId: opts.turnId, seq: 3, branch: 0, kind: "critique", label: "Self-critique", createdAt: Date.now() });
+    const critiqueResult = await runPhaseLite({
+      taskId: opts.taskId, phaseId: critiquePhase.id, kind: "critique",
+      prompt: critiqueInstructionPrompt({ goal: opts.goal }),
+      messages: [
+        { role: "user", content: draftPromptText },
+        { role: "assistant", content: draftOutput },
+        { role: "user", content: critiqueInstructionPrompt({ goal: opts.goal }) },
+      ],
+    });
+    usages.push(critiqueResult.usage);
+    critiqueOutput = critiqueResult.output;
+  }
+
+  // ── Revise ──
+  // Use conversation_history to carry draft + critique, slim instruction as input
+  const revisePhase = store.addPhase({ turnId: opts.turnId, seq: 4, branch: 0, kind: "revise", label: "Final revision", createdAt: Date.now() });
   const reviseResult = await runPhase({
-    taskId: opts.taskId,
-    phaseId: revisePhase.id,
-    kind: "revise",
-    prompt: revisePrompt({
-      goal: opts.goal,
-      context: opts.context,
-      draft: draftResult.output,
-      critique: critiqueResult.output,
-      toolsets: opts.toolsets,
-      language: opts.language,
+    taskId: opts.taskId, phaseId: revisePhase.id, kind: "revise",
+    prompt: reviseInstructionPrompt({
+      goal: opts.goal, toolsets: opts.toolsets, language: opts.language,
     }),
+    conversationHistory: [
+      { role: "user", content: "Write a draft report." },
+      { role: "assistant", content: draftOutput },
+      { role: "user", content: "Critique this report." },
+      { role: "assistant", content: critiqueOutput },
+    ],
   });
   usages.push(reviseResult.usage);
   return reviseResult.output;
 }
 
-// Shared plan + research for standard/deep modes
+// Shared plan + research for standard/deep modes (with optional cache for retry)
 async function runPlanAndResearch(
   opts: PipelineOpts,
   usages: (TokenUsage | undefined)[]
@@ -523,61 +580,100 @@ async function runPlanAndResearch(
   }[];
 }> {
   const isFollowup = Boolean(opts.priorReport && opts.followupMessage);
-  const { taskId, turnId, goal, context, toolsets } = opts;
+  const { taskId, turnId, goal, context, toolsets, cache } = opts;
 
-  const planPhase = store.addPhase({
-    turnId,
-    seq: 0,
-    branch: 0,
-    kind: "plan",
-    label: isFollowup ? "Re-plan with refinement" : "Plan research",
-    createdAt: Date.now(),
-  });
+  // ── Plan phase (skip if cached) ──
+  let planOutput: string;
+  if (cache?.planOutput) {
+    replayPhase(turnId, taskId, {
+      seq: 0, branch: 0, kind: "plan",
+      label: isFollowup ? "Re-plan with refinement (cached)" : "Plan research (cached)",
+      output: cache.planOutput, usage: cache.planUsage,
+    });
+    usages.push(cache.planUsage);
+    planOutput = cache.planOutput;
+  } else {
+    const planPhase = store.addPhase({
+      turnId, seq: 0, branch: 0, kind: "plan",
+      label: isFollowup ? "Re-plan with refinement" : "Plan research",
+      createdAt: Date.now(),
+    });
 
-  // Inject prior knowledge from knowledge base
-  const priorKnowledge = searchPriorKnowledge(goal);
+    const priorKnowledge = searchPriorKnowledge(goal);
+    const planPromptText = isFollowup
+      ? planPrompt({ goal, context, toolsets, language: opts.language }) +
+        priorKnowledge + "\n\n" +
+        followupContextPrompt({ priorReport: opts.priorReport!, followupMessage: opts.followupMessage! })
+      : planPrompt({ goal, context, toolsets, language: opts.language }) + priorKnowledge;
 
-  const planPromptText = isFollowup
-    ? planPrompt({ goal, context, toolsets, language: opts.language }) +
-      priorKnowledge +
-      "\n\n" +
-      followupContextPrompt({
-        priorReport: opts.priorReport!,
-        followupMessage: opts.followupMessage!,
-      })
-    : planPrompt({ goal, context, toolsets, language: opts.language }) + priorKnowledge;
+    const planResult = await runPhaseLite({ taskId, phaseId: planPhase.id, kind: "plan", prompt: planPromptText });
+    usages.push(planResult.usage);
+    planOutput = planResult.output;
+  }
 
-  // Plan doesn't need tools — use lightweight chat completions
-  const planResult = await runPhaseLite({
-    taskId,
-    phaseId: planPhase.id,
-    kind: "plan",
-    prompt: planPromptText,
-  });
-  usages.push(planResult.usage);
-
-  const plan = parsePlan(planResult.output) ?? {
+  const plan = parsePlan(planOutput) ?? {
     sections: ["TL;DR", "Details", "References"],
-    questions: [
-      {
-        id: "Q1",
-        title: goal,
-        approach:
-          "Treat the full goal as one research thread; search web and cite primary sources.",
-      },
-    ],
+    questions: [{ id: "Q1", title: goal, approach: "Treat the full goal as one research thread; search web and cite primary sources." }],
   };
 
-  const researchQuestions = plan.questions.slice(0, MAX_PARALLEL_RESEARCH);
+  const researchQuestions = plan.questions.slice(0, getMaxResearch());
+
+  // ── Research phase (replay cached branches, run missing ones) ──
+  const cachedResearch = cache?.researchByBranch;
+  const cachedResults: { question: import("../../shared/types.ts").ResearchQuestion; output: string; usage?: TokenUsage }[] = [];
+  const missingBranches: { question: import("../../shared/types.ts").ResearchQuestion; index: number }[] = [];
+
+  for (let i = 0; i < researchQuestions.length; i++) {
+    const q = researchQuestions[i];
+    const hit = cachedResearch?.get(i);
+    if (hit) {
+      replayPhase(turnId, taskId, { seq: 1, branch: i, kind: "research", label: `${q.id}: ${q.title} (cached)`, output: hit.output, usage: hit.usage });
+      usages.push(hit.usage);
+      cachedResults.push({ question: q, output: hit.output, usage: hit.usage });
+    } else {
+      missingBranches.push({ question: q, index: i });
+    }
+  }
+
+  if (missingBranches.length > 0) {
+    const newPhases = missingBranches.map(({ question: q, index: i }) =>
+      store.addPhase({ turnId, seq: 1, branch: i, kind: "research", label: `${q.id}: ${q.title}`, createdAt: Date.now() })
+    );
+
+    broadcast(taskId, {
+      event: "pipeline.plan_parsed",
+      data: { plan, researchPhaseIds: newPhases.map((p) => p.id) },
+    });
+
+    const newResults = await Promise.all(
+      missingBranches.map(({ question: q }, i) =>
+        runPhase({ taskId, phaseId: newPhases[i].id, kind: "research", prompt: researchPrompt({ goal, question: q, context }) })
+          .then((r) => ({ question: q, output: r.output, usage: r.usage }))
+      )
+    );
+    newResults.forEach((r) => usages.push(r.usage));
+
+    for (const r of newResults) {
+      extractPhaseKnowledge(taskId, r.question.title, r.output).catch(() => {});
+    }
+
+    // Merge in original order
+    const allResults = [...cachedResults, ...newResults].sort((a, b) => {
+      const ai = researchQuestions.findIndex((q) => q.id === a.question.id);
+      const bi = researchQuestions.findIndex((q) => q.id === b.question.id);
+      return ai - bi;
+    });
+    return { plan, researchResults: allResults };
+  }
+
+  // All research was cached (or no missing branches above created new results)
+  if (cachedResults.length > 0) {
+    return { plan, researchResults: cachedResults };
+  }
+
+  // No cache at all — original flow
   const researchPhases: Phase[] = researchQuestions.map((q, i) =>
-    store.addPhase({
-      turnId,
-      seq: 1,
-      branch: i,
-      kind: "research",
-      label: `${q.id}: ${q.title}`,
-      createdAt: Date.now(),
-    })
+    store.addPhase({ turnId, seq: 1, branch: i, kind: "research", label: `${q.id}: ${q.title}`, createdAt: Date.now() })
   );
 
   broadcast(taskId, {
@@ -587,17 +683,12 @@ async function runPlanAndResearch(
 
   const researchResults = await Promise.all(
     researchQuestions.map((q, i) =>
-      runPhase({
-        taskId,
-        phaseId: researchPhases[i].id,
-        kind: "research",
-        prompt: researchPrompt({ goal, question: q, context }),
-      }).then((r) => ({ question: q, output: r.output, usage: r.usage }))
+      runPhase({ taskId, phaseId: researchPhases[i].id, kind: "research", prompt: researchPrompt({ goal, question: q, context }) })
+        .then((r) => ({ question: q, output: r.output, usage: r.usage }))
     )
   );
   researchResults.forEach((r) => usages.push(r.usage));
 
-  // Extract knowledge from each research branch (non-blocking)
   for (const r of researchResults) {
     extractPhaseKnowledge(taskId, r.question.title, r.output).catch(() => {});
   }

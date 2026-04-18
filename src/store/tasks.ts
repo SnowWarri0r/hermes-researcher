@@ -6,6 +6,7 @@ import {
   getTask as apiGet,
   listTasks as apiList,
   sendFollowup as apiFollowup,
+  retryTask as apiRetry,
   subscribeToTask,
   cancelTask as apiCancel,
   patchTask as apiPatch,
@@ -95,7 +96,7 @@ export const useTaskStore = create<TaskStore>()((set, get) => ({
     try {
       const detail = await apiGet(id);
       if (get().activeTaskId === id) {
-        set({ activeTaskDetail: detail, streamingText: "" });
+        set({ activeTaskDetail: detail });
       }
     } catch {
       /* ignore */
@@ -115,14 +116,9 @@ export const useTaskStore = create<TaskStore>()((set, get) => ({
   },
 
   async retry(id) {
-    const task = get().activeTaskDetail ?? get().tasks.find((t) => t.id === id);
-    if (!task) return;
-    await apiCreate({
-      goal: task.goal,
-      context: task.context,
-      toolsets: task.toolsets,
-      mode: task.mode,
-    });
+    await apiRetry(id);
+    // Re-open task to pick up new turn + start SSE
+    await get().openTask(id);
     await get().refreshList();
   },
 
@@ -186,10 +182,10 @@ export const useTaskStore = create<TaskStore>()((set, get) => ({
             }
 
             if (event.event === "message.delta" && event.delta) {
-              // Only accumulate streaming text for report-producing phases
+              // Accumulate streaming text for report-producing and review phases
               const kind = get().streamingPhaseKind;
-              const reportPhases = ["write", "draft", "revise"];
-              if (reportPhases.includes(kind)) {
+              const streamingPhases = ["write", "draft", "revise", "critique", "plan"];
+              if (streamingPhases.includes(kind)) {
                 set((s) => ({ streamingText: s.streamingText + event.delta }));
               }
             }
