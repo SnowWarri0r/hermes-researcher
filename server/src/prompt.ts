@@ -1,3 +1,4 @@
+import { jsonrepair } from "jsonrepair";
 import type { Plan } from "../../shared/types.ts";
 
 function styleGuide(language?: string): string {
@@ -57,8 +58,9 @@ ${opts.context ? `\n## Context\n\n${opts.context}\n` : ""}${toolsetsBlock}
 
 ## Output format
 
-1. **Reasoning** (under 150 words): identify the core dimensions of this goal (e.g. technical mechanism, comparative analysis, practical constraints, risk factors). Explain how you're splitting them into non-overlapping questions.
-2. **Plan JSON** in a \`\`\`json block:
+First, a short **Reasoning** section (under 150 words): identify the core dimensions of this goal (e.g. technical mechanism, comparative analysis, practical constraints, risk factors). Explain how you're splitting them into non-overlapping questions.
+
+Then output the plan as JSON inside a fenced code block with language "json". Schema:
 
 \`\`\`json
 {
@@ -530,47 +532,49 @@ export function isMinorRefinement(message: string): boolean {
 // Parse plan JSON
 // ---------------------------------------------------------------------------
 export function parsePlan(raw: string): Plan | null {
-  const jsonBlock = raw.match(/```json\s*([\s\S]*?)```/i);
-  const candidate = jsonBlock ? jsonBlock[1] : raw;
-  try {
-    const parsed = JSON.parse(candidate);
-    if (
-      parsed &&
-      Array.isArray(parsed.sections) &&
-      Array.isArray(parsed.questions)
-    ) {
+  // Try every ```json block AND raw text AND largest brace-balanced substring,
+  // using jsonrepair as a last resort. Validates that result has sections+questions.
+  const candidates: string[] = [];
+  const blockRe = /```json\s*([\s\S]*?)```/gi;
+  let m: RegExpExecArray | null;
+  while ((m = blockRe.exec(raw)) !== null) candidates.push(m[1]);
+  // Also try anonymous fenced blocks
+  const anonRe = /```\s*([\s\S]*?)```/g;
+  while ((m = anonRe.exec(raw)) !== null) candidates.push(m[1]);
+  candidates.push(raw);
+  // Also extract the widest {...} substring
+  const firstBrace = raw.indexOf("{");
+  const lastBrace = raw.lastIndexOf("}");
+  if (firstBrace !== -1 && lastBrace > firstBrace) {
+    candidates.push(raw.slice(firstBrace, lastBrace + 1));
+  }
+
+  for (const candidate of candidates) {
+    const parsed = tryParse(candidate.trim());
+    if (parsed && Array.isArray(parsed.sections) && Array.isArray(parsed.questions)) {
       const sections: string[] = parsed.sections
         .filter((s: unknown) => typeof s === "string")
         .slice(0, 10);
       const questions = parsed.questions
-        .filter(
-          (q: unknown) =>
-            typeof q === "object" && q !== null && "title" in (q as object)
-        )
+        .filter((q: unknown) => typeof q === "object" && q !== null && "title" in (q as object))
         .slice(0, 8)
-        .map(
-          (
-            q: { id?: string; title: string; approach?: string },
-            i: number
-          ) => ({
-            id: q.id || `Q${i + 1}`,
-            title: String(q.title),
-            approach: String(
-              q.approach || "Search web and cite primary sources."
-            ),
-          })
-        );
-      if (questions.length === 0) return null;
+        .map((q: { id?: string; title: string; approach?: string }, i: number) => ({
+          id: q.id || `Q${i + 1}`,
+          title: String(q.title),
+          approach: String(q.approach || "Search web and cite primary sources."),
+        }));
+      if (questions.length === 0) continue;
       return {
-        sections:
-          sections.length > 0
-            ? sections
-            : ["TL;DR", "Details", "References"],
+        sections: sections.length > 0 ? sections : ["TL;DR", "Details", "References"],
         questions,
       };
     }
-  } catch {
-    /* fall through */
   }
+  return null;
+}
+
+function tryParse(text: string): { sections?: unknown; questions?: unknown } | null {
+  try { return JSON.parse(text); } catch { /* fall through */ }
+  try { return JSON.parse(jsonrepair(text)); } catch { /* fall through */ }
   return null;
 }
