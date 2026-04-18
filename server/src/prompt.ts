@@ -74,10 +74,13 @@ Then output the plan as JSON inside a fenced code block with language "json". Sc
 
 ## Rules for good questions
 
+- **Decompose by analytical dimension, NOT by data source.** This is the most common mistake. If the goal mentions sources like "Hacker News, arXiv, Hugging Face", do NOT produce "Q1: what's on HN, Q2: what's on arXiv...". That forces each branch to be a one-source listing → the final report becomes an aggregation with no synthesis. Instead, split by **what you're looking for** — themes, signals, dimensions — and let each branch search ACROSS sources for evidence of that theme.
+    - ❌ Bad: "Q1: HN top AI posts / Q2: HF top models / Q3: arXiv top papers / Q4: cross-source synthesis"
+    - ✅ Good: "Q1: biggest technical release/breakthrough / Q2: dominant community sentiment / Q3: emerging research direction / Q4: industry moves (funding/hiring/product) / Q5: weak signals for future trends" — each branch searches HN + HF + arXiv + news for evidence of that theme.
 - **Non-overlapping**: each question covers a distinct angle. No two questions should return similar search results.
 - **Actionable**: each question must be answerable by searching the web, reading docs, or running code. Avoid meta-questions like "What is the background?" or "Why is this important?"
 - **Specific**: "What are the latency/throughput benchmarks of vLLM vs TGI on A100?" not "Compare inference frameworks".
-- **Approach must be concrete**: name specific search queries, websites, APIs, or data sources. "Search GitHub issues for memory leak reports" not "investigate issues".
+- **Approach must be concrete**: name specific search queries, websites, APIs, or data sources. "Search GitHub issues for memory leak reports" not "investigate issues". Include multiple sources in the approach when cross-source evidence strengthens the answer.
 - **Cover multiple dimensions**: consider what/how/why/comparison/tradeoff/risk angles as appropriate for the goal.
 
 ## Rules for plan structure
