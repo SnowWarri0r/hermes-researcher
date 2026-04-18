@@ -1,11 +1,7 @@
 import { store, db } from "./db.ts";
 import { hermesChat } from "./hermes.ts";
 import { getModelForPhase } from "./settings.ts";
-import {
-  getEmbedding,
-  isEmbeddingConfigured,
-  cosineSimilarity,
-} from "./embedding.ts";
+import { getEmbedding, isEmbeddingConfigured } from "./embedding.ts";
 
 /**
  * After a task completes, extract key findings into the knowledge base.
@@ -219,91 +215,6 @@ function topicSimilarity(a: string, b: string): number {
   }
   const union = wordsA.size + wordsB.size - intersection;
   return union === 0 ? 0 : intersection / union;
-}
-
-/**
- * Expand a goal into better FTS5 search terms using a cheap LLM call.
- * Returns multiple keyword groups for broader recall.
- */
-export async function expandSearchQuery(goal: string): Promise<string[]> {
-  const model = getModelForPhase("plan");
-
-  try {
-    const { content } = await hermesChat({
-      message: `Given this research goal, produce 3-5 search keyword groups for finding related prior research. Each group should be 2-4 words. Include synonyms and related terms in different languages if relevant.
-
-Goal: ${goal}
-
-Output one group per line, nothing else. Example:
-reinforcement learning PPO
-RL policy optimization
-强化学习 策略优化`,
-      model,
-    });
-
-    return content
-      .split("\n")
-      .map((l) => l.trim())
-      .filter((l) => l.length > 0 && l.length < 100)
-      .slice(0, 5);
-  } catch {
-    // Fallback: just use the goal itself
-    return [goal.slice(0, 80)];
-  }
-}
-
-/**
- * Search knowledge base — vector search if configured, FTS5 fallback.
- */
-export async function searchPriorKnowledge(goal: string): Promise<string> {
-  try {
-    type KnowledgeResult = { topic: string; summary: string; sources: string[]; taskId: string };
-    let entries: KnowledgeResult[] = [];
-
-    // Try vector search first
-    if (isEmbeddingConfigured()) {
-      const queryEmb = await getEmbedding(goal);
-      if (queryEmb) {
-        entries = store.searchKnowledgeByVector(queryEmb, 6, 0.35);
-      }
-    }
-
-    // Fallback to LLM-expanded FTS5
-    if (entries.length === 0) {
-      const queries = await expandSearchQuery(goal);
-      const seen = new Map<string, KnowledgeResult>();
-
-      for (const q of queries) {
-        const cleaned = q.replace(/[^\w\s\u4e00-\u9fff]/g, " ").trim();
-        if (!cleaned) continue;
-        try {
-          for (const r of store.searchKnowledge(cleaned, 3)) {
-            if (!seen.has(r.topic)) seen.set(r.topic, r);
-          }
-        } catch {
-          /* FTS5 might fail */
-        }
-      }
-      entries = [...seen.values()].slice(0, 6);
-    }
-
-    if (entries.length === 0) return "";
-
-    const block = entries
-      .map(
-        (r) =>
-          `- **${r.topic}**: ${r.summary}${
-            r.sources.length > 0
-              ? ` (sources: ${r.sources.slice(0, 2).join(", ")})`
-              : ""
-          }`
-      )
-      .join("\n");
-
-    return `\n\n## Prior knowledge (from previous research)\n\n${block}\n\nBuild on these findings. Don't re-research known topics — go deeper or verify if outdated.`;
-  } catch {
-    return "";
-  }
 }
 
 /**

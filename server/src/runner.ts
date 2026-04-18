@@ -8,9 +8,9 @@ import {
 import { getModelForPhase } from "./settings.ts";
 import {
   extractKnowledge,
-  searchPriorKnowledge,
   extractPhaseKnowledge,
 } from "./knowledge.ts";
+import { searchPriorKnowledge } from "./retrieval.ts";
 import {
   planPrompt,
   researchPrompt,
