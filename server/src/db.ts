@@ -1,4 +1,5 @@
 import Database from "better-sqlite3";
+import * as sqliteVec from "sqlite-vec";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { mkdirSync } from "node:fs";
@@ -17,7 +18,7 @@ import type {
   PhaseStatus,
   PipelineProgress,
 } from "../../shared/types.ts";
-import { cosineSimilarity } from "./embedding.ts";
+// Vector search handled by sqlite-vec extension (vec0 virtual table)
 
 const DB_DIR = join(homedir(), ".hermes-dashboard");
 mkdirSync(DB_DIR, { recursive: true });
@@ -26,6 +27,7 @@ const DB_PATH = process.env.HERMES_DASHBOARD_DB || join(DB_DIR, "tasks.db");
 export const db = new Database(DB_PATH);
 db.pragma("journal_mode = WAL");
 db.pragma("foreign_keys = ON");
+sqliteVec.load(db);
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS tasks (
@@ -108,6 +110,21 @@ db.exec(`
   CREATE VIRTUAL TABLE IF NOT EXISTS knowledge_fts USING fts5(
     topic, summary, content=knowledge, content_rowid=id
   );
+`);
+
+// Vector index — created separately because dimensions might vary.
+// Default 1536 (text-embedding-3-small). Override via EMBEDDING_DIMENSIONS env.
+const VEC_DIM = Number(process.env.EMBEDDING_DIMENSIONS) || 1536;
+
+try {
+  db.exec(
+    `CREATE VIRTUAL TABLE IF NOT EXISTS knowledge_vec USING vec0(embedding float[${VEC_DIM}])`
+  );
+} catch {
+  // vec0 might already exist with different dimensions — that's ok
+}
+
+db.exec(`
 
   CREATE TABLE IF NOT EXISTS task_chains (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -569,10 +586,21 @@ export const store = {
         opts.embedding ? JSON.stringify(opts.embedding) : null,
         opts.createdAt
       );
+    const rowId = info.lastInsertRowid;
     // Sync FTS
     db.prepare(
       `INSERT INTO knowledge_fts (rowid, topic, summary) VALUES (?, ?, ?)`
-    ).run(info.lastInsertRowid, opts.topic, opts.summary);
+    ).run(rowId, opts.topic, opts.summary);
+    // Sync vec index
+    if (opts.embedding) {
+      try {
+        db.prepare(
+          `INSERT INTO knowledge_vec (rowid, embedding) VALUES (?, vec_f32(?))`
+        ).run(rowId, JSON.stringify(opts.embedding));
+      } catch {
+        // vec insert might fail if dimensions mismatch
+      }
+    }
   },
 
   searchKnowledge(query: string, limit = 5): {
@@ -607,40 +635,42 @@ export const store = {
   searchKnowledgeByVector(
     queryEmbedding: number[],
     limit = 5,
-    threshold = 0.3
+    _threshold = 0.3
   ): { topic: string; summary: string; sources: string[]; taskId: string; score: number }[] {
-    // Load all embeddings and compute cosine similarity in JS
-    // Fine for < 10k entries; for larger scale, use a vector DB extension
-    const rows = db
-      .prepare(
-        `SELECT task_id, topic, summary, sources, embedding
-         FROM knowledge WHERE embedding IS NOT NULL`
-      )
-      .all() as {
-      task_id: string;
-      topic: string;
-      summary: string;
-      sources: string;
-      embedding: string;
-    }[];
+    try {
+      // vec0 KNN query: MATCH returns top-K by distance (cosine distance)
+      const rows = db
+        .prepare(
+          `SELECT
+            k.task_id, k.topic, k.summary, k.sources,
+            v.distance
+          FROM knowledge_vec v
+          JOIN knowledge k ON k.id = v.rowid
+          WHERE v.embedding MATCH vec_f32(?)
+            AND k > 0
+          ORDER BY v.distance
+          LIMIT ?`
+        )
+        .all(JSON.stringify(queryEmbedding), limit) as {
+        task_id: string;
+        topic: string;
+        summary: string;
+        sources: string;
+        distance: number;
+      }[];
 
-    const scored = rows
-      .map((r) => {
-        const emb = JSON.parse(r.embedding) as number[];
-        const score = cosineSimilarity(queryEmbedding, emb);
-        return {
+      return rows
+        .filter((r) => r.distance < (1 - _threshold)) // distance < 0.7 means similarity > 0.3
+        .map((r) => ({
           taskId: r.task_id,
           topic: r.topic,
           summary: r.summary,
           sources: JSON.parse(r.sources) as string[],
-          score,
-        };
-      })
-      .filter((r) => r.score >= threshold)
-      .sort((a, b) => b.score - a.score)
-      .slice(0, limit);
-
-    return scored;
+          score: 1 - r.distance,
+        }));
+    } catch {
+      return [];
+    }
   },
 
   // Task chains
