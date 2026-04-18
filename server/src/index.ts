@@ -267,6 +267,44 @@ app.delete("/api/templates/:id", (c) => {
 });
 
 // ---------------------------------------------------------------------------
+// Schedules (cron + Discord delivery)
+// ---------------------------------------------------------------------------
+import {
+  listSchedules,
+  getSchedule,
+  createSchedule,
+  updateSchedule,
+  deleteSchedule,
+  triggerSchedule,
+  startScheduler,
+} from "./scheduler.ts";
+
+app.get("/api/schedules", (c) => c.json(listSchedules()));
+
+app.post("/api/schedules", async (c) => {
+  const body = await c.req.json();
+  const schedule = createSchedule(body);
+  return c.json(schedule, 201);
+});
+
+app.patch("/api/schedules/:id", async (c) => {
+  const updated = updateSchedule(c.req.param("id"), await c.req.json());
+  if (!updated) return c.json({ error: "not found" }, 404);
+  return c.json(updated);
+});
+
+app.delete("/api/schedules/:id", (c) => {
+  deleteSchedule(c.req.param("id"));
+  return c.json({ ok: true });
+});
+
+app.post("/api/schedules/:id/trigger", async (c) => {
+  const taskId = await triggerSchedule(c.req.param("id"));
+  if (!taskId) return c.json({ error: "not found" }, 404);
+  return c.json({ taskId });
+});
+
+// ---------------------------------------------------------------------------
 // Knowledge base
 // ---------------------------------------------------------------------------
 import { listAllKnowledge, deleteKnowledgeEntry } from "./knowledge.ts";
@@ -393,6 +431,7 @@ const PORT = Number(process.env.PORT ?? 8787);
 const HOST = process.env.HOST ?? "0.0.0.0";
 
 resumeTracking();
+startScheduler();
 
 serve({ fetch: app.fetch, port: PORT, hostname: HOST }, (info) => {
   console.log(

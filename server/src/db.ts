@@ -110,6 +110,22 @@ db.exec(`
   CREATE VIRTUAL TABLE IF NOT EXISTS knowledge_fts USING fts5(
     topic, summary, content=knowledge, content_rowid=id
   );
+
+  CREATE TABLE IF NOT EXISTS schedules (
+    id              TEXT PRIMARY KEY,
+    name            TEXT NOT NULL,
+    goal            TEXT NOT NULL,
+    context         TEXT NOT NULL DEFAULT '',
+    mode            TEXT NOT NULL DEFAULT 'deep',
+    language        TEXT NOT NULL DEFAULT '',
+    toolsets        TEXT NOT NULL DEFAULT '[]',
+    cron            TEXT NOT NULL,
+    discord_webhook TEXT NOT NULL DEFAULT '',
+    enabled         INTEGER NOT NULL DEFAULT 1,
+    last_run_at     INTEGER,
+    last_task_id    TEXT,
+    created_at      INTEGER NOT NULL
+  );
 `);
 
 // Vector index dimensions from embedding config
