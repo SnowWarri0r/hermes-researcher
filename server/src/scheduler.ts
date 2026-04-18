@@ -63,7 +63,7 @@ function rowToSchedule(r: ScheduleRow): Schedule {
 // ── Date variable substitution ──
 function substituteDateVars(text: string): string {
   const now = new Date();
-  const fmt = (d: Date) => d.toISOString().slice(0, 10); // YYYY-MM-DD
+  const fmt = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; // local YYYY-MM-DD
   const yesterday = new Date(now);
   yesterday.setDate(yesterday.getDate() - 1);
   const weekStart = new Date(now);
