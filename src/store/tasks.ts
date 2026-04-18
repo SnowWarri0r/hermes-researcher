@@ -165,6 +165,15 @@ export const useTaskStore = create<TaskStore>()((set, get) => ({
 
       // If running, subscribe to SSE for live updates
       if (detail.status === "running") {
+        // Infer current phase kind from detail so streaming works immediately
+        const latestTurn = detail.turns[detail.turns.length - 1];
+        if (latestTurn) {
+          const runningPhase = latestTurn.phases.find((p) => p.status === "running");
+          if (runningPhase) {
+            set({ streamingPhaseKind: runningPhase.kind });
+          }
+        }
+
         const unsub = subscribeToTask(
           id,
           (event) => {
