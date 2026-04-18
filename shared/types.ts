@@ -145,16 +145,25 @@ export const DEFAULT_MODEL_ROUTING: ModelRouting = {
 // ---------------------------------------------------------------------------
 // Task templates
 // ---------------------------------------------------------------------------
+export interface TemplateVariable {
+  name: string;
+  label: string;
+  type: "text" | "select" | "number";
+  options?: string[];      // for select type
+  defaultValue?: string;
+  placeholder?: string;
+}
+
 export interface TaskTemplate {
   id: string;
   name: string;
   description: string;
-  goal: string;          // supports {variable} placeholders
+  goal: string;            // contains {varName} placeholders
   context: string;
   toolsets: string[];
   mode: TaskMode;
   language: string;
-  variables: string[];   // extracted from goal, e.g. ["topic", "scope"]
+  variables: TemplateVariable[];
   createdAt: number;
 }
 

@@ -32,6 +32,8 @@ export function TaskCreator() {
   const [showContext, setShowContext] = useState(false);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [activeTemplate, setActiveTemplate] = useState<TaskTemplate | null>(null);
+  const [varValues, setVarValues] = useState<Record<string, string>>({});
 
   useEffect(() => {
     fetch("/api/templates")
@@ -74,17 +76,87 @@ export function TaskCreator() {
               key={tpl.id}
               type="button"
               onClick={() => {
-                setGoal(tpl.goal);
-                if (tpl.context) { setContext(tpl.context); setShowContext(true); }
-                setMode(tpl.mode);
-                if (tpl.language) setLanguage(tpl.language);
+                if (tpl.variables.length > 0) {
+                  setActiveTemplate(tpl);
+                  const defaults: Record<string, string> = {};
+                  tpl.variables.forEach((v) => { defaults[v.name] = v.defaultValue ?? ""; });
+                  setVarValues(defaults);
+                } else {
+                  setGoal(tpl.goal);
+                  if (tpl.context) { setContext(tpl.context); setShowContext(true); }
+                  setMode(tpl.mode);
+                  if (tpl.language) setLanguage(tpl.language);
+                  setActiveTemplate(null);
+                }
               }}
-              className="px-2.5 py-1 rounded-md text-[11px] font-medium bg-carbon border border-charcoal text-parchment hover:border-charcoal-light hover:text-snow transition-colors"
+              className={`px-2.5 py-1 rounded-md text-[11px] font-medium border transition-colors ${
+                activeTemplate?.id === tpl.id
+                  ? "bg-emerald-dim border-emerald-signal/50 text-emerald-signal"
+                  : "bg-carbon border-charcoal text-parchment hover:border-charcoal-light hover:text-snow"
+              }`}
               title={tpl.description || tpl.goal}
             >
               {tpl.name}
             </button>
           ))}
+        </div>
+      )}
+
+      {/* Variable fill-in panel */}
+      {activeTemplate && activeTemplate.variables.length > 0 && (
+        <div className="mb-3 bg-abyss border border-emerald-signal/30 rounded-md p-3 space-y-2.5 animate-fade-in">
+          <div className="text-[11px] text-emerald-signal font-medium">Fill in template variables</div>
+          {activeTemplate.variables.map((v) => (
+            <div key={v.name} className="flex items-center gap-2">
+              <label className="text-[11px] text-parchment w-24 shrink-0">{v.label}</label>
+              {v.type === "select" ? (
+                <select
+                  value={varValues[v.name] ?? ""}
+                  onChange={(e) => setVarValues({ ...varValues, [v.name]: e.target.value })}
+                  className="flex-1 bg-carbon border border-charcoal rounded-md px-2 py-1.5 text-sm text-snow focus:outline-none focus:border-emerald-signal/50"
+                >
+                  <option value="">-- select --</option>
+                  {(v.options ?? []).map((opt) => (
+                    <option key={opt} value={opt}>{opt}</option>
+                  ))}
+                </select>
+              ) : (
+                <input
+                  type={v.type === "number" ? "number" : "text"}
+                  value={varValues[v.name] ?? ""}
+                  onChange={(e) => setVarValues({ ...varValues, [v.name]: e.target.value })}
+                  placeholder={v.placeholder || v.label}
+                  className="flex-1 bg-carbon border border-charcoal rounded-md px-2 py-1.5 text-sm text-snow placeholder:text-slate-steel focus:outline-none focus:border-emerald-signal/50"
+                />
+              )}
+            </div>
+          ))}
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                let filled = activeTemplate.goal;
+                for (const [k, v] of Object.entries(varValues)) {
+                  filled = filled.replaceAll(`{${k}}`, v || `{${k}}`);
+                }
+                setGoal(filled);
+                if (activeTemplate.context) { setContext(activeTemplate.context); setShowContext(true); }
+                setMode(activeTemplate.mode);
+                if (activeTemplate.language) setLanguage(activeTemplate.language);
+                setActiveTemplate(null);
+              }}
+              className="px-3 py-1 bg-carbon border border-emerald-signal/50 rounded-md text-[11px] font-medium text-mint hover:bg-emerald-dim transition-colors"
+            >
+              Apply
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveTemplate(null)}
+              className="px-3 py-1 bg-carbon border border-charcoal rounded-md text-[11px] text-slate-steel hover:border-charcoal-light transition-colors"
+            >
+              Cancel
+            </button>
+          </div>
         </div>
       )}
 

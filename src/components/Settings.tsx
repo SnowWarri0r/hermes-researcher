@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useTaskStore } from "../store/tasks";
 import { checkHealth } from "../api/client";
-import type { ModelRouting, TaskTemplate, TaskMode } from "../types";
+import type { ModelRouting, TaskTemplate, TemplateVariable, TaskMode } from "../types";
 import { TASK_MODE_META } from "../types";
 
 const API = "/api";
@@ -142,6 +142,7 @@ function TemplatesSection() {
   const [goal, setGoal] = useState("");
   const [context, setContext] = useState("");
   const [mode, setMode] = useState<TaskMode>("deep");
+  const [vars, setVars] = useState<TemplateVariable[]>([]);
 
   useEffect(() => {
     fetch(`${API}/templates`)
@@ -149,6 +150,27 @@ function TemplatesSection() {
       .then(setTemplates)
       .catch(() => {});
   }, []);
+
+  // Auto-detect {variables} in goal text
+  useEffect(() => {
+    const matches = goal.match(/\{(\w+)\}/g);
+    if (!matches) { setVars([]); return; }
+    const names = [...new Set(matches.map((m) => m.slice(1, -1)))];
+    setVars((prev) =>
+      names.map((n) => prev.find((v) => v.name === n) ?? {
+        name: n,
+        label: n.charAt(0).toUpperCase() + n.slice(1),
+        type: "text" as const,
+        placeholder: "",
+      })
+    );
+  }, [goal]);
+
+  function updateVar(name: string, patch: Partial<TemplateVariable>) {
+    setVars((prev) =>
+      prev.map((v) => (v.name === name ? { ...v, ...patch } : v))
+    );
+  }
 
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault();
@@ -164,15 +186,12 @@ function TemplatesSection() {
         toolsets: [],
         mode,
         language: "",
-        variables: [],
+        variables: vars,
       }),
     });
     const tpl = await res.json();
     setTemplates([...templates, tpl]);
-    setName("");
-    setDescription("");
-    setGoal("");
-    setContext("");
+    setName(""); setDescription(""); setGoal(""); setContext(""); setVars([]);
     setShowForm(false);
   }
 
@@ -181,119 +200,119 @@ function TemplatesSection() {
     setTemplates(templates.filter((t) => t.id !== id));
   }
 
+  const inputCls = "w-full bg-abyss border border-charcoal rounded-md px-3 py-2 text-sm text-snow placeholder:text-slate-steel focus:outline-none focus:border-emerald-signal/50";
+
   return (
     <div>
       <div className="flex items-center justify-between mb-4">
-        <h2 className="text-lg font-semibold text-snow font-[family-name:var(--font-heading)] tracking-tight">
-          Templates
-        </h2>
-        <button
-          onClick={() => setShowForm(!showForm)}
-          className="text-xs text-mint hover:text-emerald-signal transition-colors"
-        >
+        <h2 className="text-lg font-semibold text-snow font-[family-name:var(--font-heading)] tracking-tight">Templates</h2>
+        <button onClick={() => setShowForm(!showForm)} className="text-xs text-mint hover:text-emerald-signal transition-colors">
           {showForm ? "Cancel" : "+ New template"}
         </button>
       </div>
 
       {showForm && (
-        <form
-          onSubmit={handleCreate}
-          className="bg-carbon border border-charcoal rounded-lg p-4 mb-4 space-y-3"
-        >
-          <input
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="Template name"
-            className="w-full bg-abyss border border-charcoal rounded-md px-3 py-2 text-sm text-snow placeholder:text-slate-steel focus:outline-none focus:border-emerald-signal/50"
-          />
-          <input
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            placeholder="Short description"
-            className="w-full bg-abyss border border-charcoal rounded-md px-3 py-2 text-xs text-snow placeholder:text-slate-steel focus:outline-none focus:border-emerald-signal/50"
-          />
+        <form onSubmit={handleCreate} className="bg-carbon border border-charcoal rounded-lg p-4 mb-4 space-y-3">
+          <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Template name" className={inputCls} />
+          <input value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Short description" className={`${inputCls} text-xs`} />
           <textarea
             value={goal}
             onChange={(e) => setGoal(e.target.value)}
-            placeholder="Goal template — use {variable} for placeholders, e.g. 'Competitive analysis of {product} vs {competitor}'"
+            placeholder="Goal — use {variable} for placeholders, e.g. 'Competitive analysis of {product} in {market}'"
             rows={2}
-            className="w-full bg-abyss border border-charcoal rounded-md px-3 py-2 text-sm text-snow placeholder:text-slate-steel focus:outline-none focus:border-emerald-signal/50 resize-none"
+            className={`${inputCls} resize-none`}
           />
-          <textarea
-            value={context}
-            onChange={(e) => setContext(e.target.value)}
-            placeholder="Default context (optional)"
-            rows={2}
-            className="w-full bg-abyss border border-charcoal rounded-md px-3 py-2 text-xs text-snow placeholder:text-slate-steel focus:outline-none focus:border-emerald-signal/50 resize-none"
-          />
+          <textarea value={context} onChange={(e) => setContext(e.target.value)} placeholder="Default context (optional)" rows={2} className={`${inputCls} text-xs resize-none`} />
+
+          {/* Auto-detected variables */}
+          {vars.length > 0 && (
+            <div className="space-y-2">
+              <div className="text-xs text-slate-steel">Variables detected — configure each:</div>
+              {vars.map((v) => (
+                <div key={v.name} className="bg-abyss border border-charcoal-subtle rounded-md p-3 space-y-2">
+                  <div className="flex items-center gap-2">
+                    <span className="text-[11px] font-mono text-mint shrink-0">{`{${v.name}}`}</span>
+                    <input
+                      value={v.label}
+                      onChange={(e) => updateVar(v.name, { label: e.target.value })}
+                      placeholder="Label"
+                      className="flex-1 bg-carbon border border-charcoal rounded px-2 py-1 text-[11px] text-snow focus:outline-none focus:border-emerald-signal/50"
+                    />
+                    <select
+                      value={v.type}
+                      onChange={(e) => updateVar(v.name, { type: e.target.value as TemplateVariable["type"], options: e.target.value === "select" ? [""] : undefined })}
+                      className="bg-carbon border border-charcoal rounded px-2 py-1 text-[11px] text-snow focus:outline-none"
+                    >
+                      <option value="text">Text</option>
+                      <option value="select">Select</option>
+                      <option value="number">Number</option>
+                    </select>
+                  </div>
+                  {v.type === "text" && (
+                    <input
+                      value={v.placeholder ?? ""}
+                      onChange={(e) => updateVar(v.name, { placeholder: e.target.value })}
+                      placeholder="Placeholder text"
+                      className="w-full bg-carbon border border-charcoal rounded px-2 py-1 text-[11px] text-slate-steel focus:outline-none focus:border-emerald-signal/50"
+                    />
+                  )}
+                  {v.type === "select" && (
+                    <div className="space-y-1">
+                      <div className="text-[10px] text-slate-steel">Options (one per line):</div>
+                      <textarea
+                        value={(v.options ?? []).join("\n")}
+                        onChange={(e) => updateVar(v.name, { options: e.target.value.split("\n").filter(Boolean) })}
+                        rows={3}
+                        className="w-full bg-carbon border border-charcoal rounded px-2 py-1 text-[11px] text-snow resize-none focus:outline-none focus:border-emerald-signal/50"
+                        placeholder="Python\nGo\nRust"
+                      />
+                    </div>
+                  )}
+                  <input
+                    value={v.defaultValue ?? ""}
+                    onChange={(e) => updateVar(v.name, { defaultValue: e.target.value })}
+                    placeholder="Default value"
+                    className="w-full bg-carbon border border-charcoal rounded px-2 py-1 text-[11px] text-slate-steel focus:outline-none focus:border-emerald-signal/50"
+                  />
+                </div>
+              ))}
+            </div>
+          )}
+
           <div className="flex items-center gap-2">
             <span className="text-xs text-slate-steel">Mode:</span>
             {(["quick", "standard", "deep"] as TaskMode[]).map((m) => (
-              <button
-                key={m}
-                type="button"
-                onClick={() => setMode(m)}
-                className={`px-2 py-0.5 rounded text-[11px] font-medium border transition-colors ${
-                  mode === m
-                    ? "bg-emerald-dim border-emerald-signal/50 text-emerald-signal"
-                    : "bg-carbon border-charcoal text-slate-steel"
-                }`}
-              >
+              <button key={m} type="button" onClick={() => setMode(m)} className={`px-2 py-0.5 rounded text-[11px] font-medium border transition-colors ${mode === m ? "bg-emerald-dim border-emerald-signal/50 text-emerald-signal" : "bg-carbon border-charcoal text-slate-steel"}`}>
                 {TASK_MODE_META[m].label}
               </button>
             ))}
           </div>
-          <button
-            type="submit"
-            disabled={!name.trim() || !goal.trim()}
-            className="px-4 py-1.5 bg-carbon border border-charcoal rounded-md text-xs font-medium text-mint hover:border-emerald-signal/50 disabled:opacity-40 transition-colors"
-          >
-            Create
-          </button>
+          <button type="submit" disabled={!name.trim() || !goal.trim()} className="px-4 py-1.5 bg-carbon border border-charcoal rounded-md text-xs font-medium text-mint hover:border-emerald-signal/50 disabled:opacity-40 transition-colors">Create</button>
         </form>
       )}
 
       {templates.length === 0 && !showForm && (
-        <div className="text-xs text-slate-steel/60 text-center py-6">
-          No templates yet. Create one to save common research patterns.
-        </div>
+        <div className="text-xs text-slate-steel/60 text-center py-6">No templates yet.</div>
       )}
 
       <div className="space-y-2">
         {templates.map((tpl) => (
-          <div
-            key={tpl.id}
-            className="bg-carbon border border-charcoal rounded-lg px-4 py-3 flex items-start justify-between gap-3"
-          >
+          <div key={tpl.id} className="bg-carbon border border-charcoal rounded-lg px-4 py-3 flex items-start justify-between gap-3">
             <div className="min-w-0">
               <div className="text-sm font-medium text-snow">{tpl.name}</div>
-              {tpl.description && (
-                <div className="text-xs text-slate-steel mt-0.5">
-                  {tpl.description}
-                </div>
-              )}
-              <div className="text-[11px] text-parchment font-mono mt-1 truncate">
-                {tpl.goal}
-              </div>
+              {tpl.description && <div className="text-xs text-slate-steel mt-0.5">{tpl.description}</div>}
+              <div className="text-[11px] text-parchment font-mono mt-1 truncate">{tpl.goal}</div>
               {tpl.variables.length > 0 && (
-                <div className="flex gap-1 mt-1.5">
-                  {tpl.variables.map((v: string) => (
-                    <span
-                      key={v}
-                      className="text-[10px] px-1.5 py-0.5 rounded bg-info-dim text-info border border-info/20 font-mono"
-                    >
-                      {`{${v}}`}
+                <div className="flex gap-1 mt-1.5 flex-wrap">
+                  {tpl.variables.map((v) => (
+                    <span key={v.name} className="text-[10px] px-1.5 py-0.5 rounded bg-info-dim text-info border border-info/20 font-mono">
+                      {v.type === "select" ? `{${v.name}} ▾` : `{${v.name}}`}
                     </span>
                   ))}
                 </div>
               )}
             </div>
-            <button
-              onClick={() => handleDelete(tpl.id)}
-              className="text-slate-steel hover:text-danger text-xs shrink-0"
-            >
-              ✕
-            </button>
+            <button onClick={() => handleDelete(tpl.id)} className="text-slate-steel hover:text-danger text-xs shrink-0">✕</button>
           </div>
         ))}
       </div>
