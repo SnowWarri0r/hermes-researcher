@@ -1,6 +1,7 @@
 import { useNavigate } from "react-router";
 import type { Task, TaskMode } from "../../types";
 import { StatusBadge } from "../common/Badge";
+import { Tooltip } from "../common/Tooltip";
 import { useTaskStore } from "../../store/tasks";
 
 function formatTokens(n: number): string {
@@ -94,12 +95,11 @@ export function TaskCard({ task }: { task: Task }) {
               </span>
             )}
             {(task.usage?.input_tokens !== undefined || task.usage?.output_tokens !== undefined) && (
-              <span
-                className="text-[11px] font-mono text-slate-steel"
-                title={`Cumulative across all phases and tool-call rounds.\nInput: ${task.usage.input_tokens?.toLocaleString() ?? "?"}\nOutput: ${task.usage.output_tokens?.toLocaleString() ?? "?"}\nNote: provider prompt caching typically bills input at 10-20% of this.`}
-              >
-                {formatTokens(task.usage.input_tokens ?? 0)}↑ / {formatTokens(task.usage.output_tokens ?? 0)}↓
-              </span>
+              <Tooltip content={`Cumulative across all phases and tool rounds.\nInput: ${task.usage.input_tokens?.toLocaleString() ?? "?"}\nOutput: ${task.usage.output_tokens?.toLocaleString() ?? "?"}\n\nProvider prompt caching typically bills input at ~10-20% of this.`}>
+                <span className="text-[11px] font-mono text-slate-steel cursor-help">
+                  {formatTokens(task.usage.input_tokens ?? 0)}↑ / {formatTokens(task.usage.output_tokens ?? 0)}↓
+                </span>
+              </Tooltip>
             )}
             <span className="text-[11px] text-slate-steel/60 ml-auto opacity-0 group-hover:opacity-100 transition-opacity">
               click to open →

@@ -6,6 +6,7 @@ import remarkMath from "remark-math";
 import rehypeKatex from "rehype-katex";
 import { useTaskStore } from "../../store/tasks";
 import { StatusBadge } from "../common/Badge";
+import { Tooltip } from "../common/Tooltip";
 import { PipelineView } from "./PipelineView";
 import { ReportDiff } from "./ReportDiff";
 import type { TurnDetail } from "../../types";
@@ -206,12 +207,11 @@ export function TaskDetail() {
                 <span className="text-[11px] font-mono text-slate-steel">{totalDuration}s</span>
               )}
               {(task.usage?.input_tokens !== undefined || task.usage?.output_tokens !== undefined) && (
-                <span
-                  className="text-[11px] font-mono text-slate-steel"
-                  title={`Cumulative across all phases and tool-call rounds.\nInput: ${task.usage.input_tokens?.toLocaleString() ?? "?"} (each agent tool round re-sends the full conversation)\nOutput: ${task.usage.output_tokens?.toLocaleString() ?? "?"}\nTotal: ${task.usage.total_tokens?.toLocaleString() ?? "?"}\n\nProvider prompt caching typically bills input at ~10-20% of this figure.`}
-                >
-                  {(task.usage.input_tokens ?? 0).toLocaleString()} ↑ / {(task.usage.output_tokens ?? 0).toLocaleString()} ↓
-                </span>
+                <Tooltip content={`Cumulative across all phases and tool-call rounds.\nEach agent tool round re-sends the full conversation.\n\nInput: ${task.usage.input_tokens?.toLocaleString() ?? "?"}\nOutput: ${task.usage.output_tokens?.toLocaleString() ?? "?"}\nTotal: ${task.usage.total_tokens?.toLocaleString() ?? "?"}\n\nProvider prompt caching typically bills input at ~10-20% of this figure.`}>
+                  <span className="text-[11px] font-mono text-slate-steel cursor-help">
+                    {(task.usage.input_tokens ?? 0).toLocaleString()} ↑ / {(task.usage.output_tokens ?? 0).toLocaleString()} ↓
+                  </span>
+                </Tooltip>
               )}
               <span className="text-[10px] font-mono text-slate-steel/50 px-1.5 py-0.5 rounded bg-carbon border border-charcoal-subtle">{task.mode}</span>
             </div>
