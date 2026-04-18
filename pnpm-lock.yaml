@@ -8,6 +8,9 @@ importers:
 
   .:
     dependencies:
+      diff:
+        specifier: ^8.0.4
+        version: 8.0.4
       react:
         specifier: ^19.1.0
         version: 19.2.5
@@ -27,6 +30,9 @@ importers:
       '@tailwindcss/vite':
         specifier: ^4.1.4
         version: 4.2.2(vite@6.4.2(jiti@2.6.1)(lightningcss@1.32.0))
+      '@types/diff':
+        specifier: ^8.0.0
+        version: 8.0.0
       '@types/react':
         specifier: ^19.1.2
         version: 19.2.14
@@ -556,6 +562,10 @@ packages:
   '@types/debug@4.1.13':
     resolution: {integrity: sha512-KSVgmQmzMwPlmtljOomayoR89W4FynCAi3E8PPs7vmDVPe84hT+vGPKkJfThkmXs0x0jAaa9U8uW8bbfyS2fWw==}
 
+  '@types/diff@8.0.0':
+    resolution: {integrity: sha512-o7jqJM04gfaYrdCecCVMbZhNdG6T1MHg/oQoRFdERLV+4d+V7FijhiEAbFu0Usww84Yijk9yH58U4Jk4HbtzZw==}
+    deprecated: This is a stub types definition. diff provides its own type definitions, so you do not need this installed.
+
   '@types/estree-jsx@1.0.5':
     resolution: {integrity: sha512-52CcUVNFyfb1A2ALocQw/Dd1BQFNmSdkuC3BkZ6iqhdMfQz7JWOFRuJFloOzjk+6WijU56m9oKXFAXc7o3Towg==}
 
@@ -684,6 +694,10 @@ packages:
 
   devlop@1.1.0:
     resolution: {integrity: sha512-RWmIqhcFf1lRYBvNmr7qTNuyCt/7/ns2jbpp1+PalgE/rDQcBT0fioSMUpJ93irlUhC5hrg4cYqe6U+0ImW0rA==}
+
+  diff@8.0.4:
+    resolution: {integrity: sha512-DPi0FmjiSU5EvQV0++GFDOJ9ASQUVFh5kD+OzOnYdi7n3Wpm9hWWGfB/O2blfHcMVTL5WkQXSnRiK9makhrcnw==}
+    engines: {node: '>=0.3.1'}
 
   electron-to-chromium@1.5.335:
     resolution: {integrity: sha512-q9n5T4BR4Xwa2cwbrwcsDJtHD/enpQ5S1xF1IAtdqf5AAgqDFmR/aakqH3ChFdqd/QXJhS3rnnXFtexU7rax6Q==}
@@ -1641,6 +1655,10 @@ snapshots:
     dependencies:
       '@types/ms': 2.1.0
 
+  '@types/diff@8.0.0':
+    dependencies:
+      diff: 8.0.4
+
   '@types/estree-jsx@1.0.5':
     dependencies:
       '@types/estree': 1.0.8
@@ -1760,6 +1778,8 @@ snapshots:
   devlop@1.1.0:
     dependencies:
       dequal: 2.0.3
+
+  diff@8.0.4: {}
 
   electron-to-chromium@1.5.335: {}
 

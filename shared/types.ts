@@ -95,6 +95,8 @@ export interface Task {
   toolsets: string[];
   mode: TaskMode;
   language: string;
+  tags: string[];
+  pinned: boolean;
   createdAt: number;
   status: TaskStatus;
   result: string;

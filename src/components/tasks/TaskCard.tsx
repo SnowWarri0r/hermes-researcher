@@ -16,6 +16,7 @@ const MODE_LABEL: Record<TaskMode, string> = {
 export function TaskCard({ task }: { task: Task }) {
   const removeTask = useTaskStore((s) => s.removeTask);
   const openTask = useTaskStore((s) => s.openTask);
+  const togglePin = useTaskStore((s) => s.togglePin);
 
   const duration =
     task.completedAt && task.createdAt
@@ -100,16 +101,32 @@ export function TaskCard({ task }: { task: Task }) {
             </span>
           </div>
         </div>
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            removeTask(task.id);
-          }}
-          className="text-slate-steel hover:text-danger text-xs p-1 transition-colors shrink-0 opacity-0 group-hover:opacity-100"
-          title="Remove"
-        >
-          ✕
-        </button>
+        <div className="flex flex-col items-center gap-1 shrink-0">
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              togglePin(task.id);
+            }}
+            className={`text-xs p-1 transition-colors ${
+              task.pinned
+                ? "text-warning"
+                : "text-slate-steel/40 opacity-0 group-hover:opacity-100 hover:text-warning"
+            }`}
+            title={task.pinned ? "Unpin" : "Pin"}
+          >
+            ★
+          </button>
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              removeTask(task.id);
+            }}
+            className="text-slate-steel hover:text-danger text-xs p-1 transition-colors opacity-0 group-hover:opacity-100"
+            title="Remove"
+          >
+            ✕
+          </button>
+        </div>
       </div>
     </div>
   );

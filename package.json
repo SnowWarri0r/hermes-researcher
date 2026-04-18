@@ -13,6 +13,7 @@
     "start": "cd server && HERMES_API_KEY=${HERMES_API_KEY} node --import tsx src/index.ts"
   },
   "dependencies": {
+    "diff": "^8.0.4",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "react-markdown": "^10.1.0",
@@ -21,6 +22,7 @@
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.1.4",
+    "@types/diff": "^8.0.0",
     "@types/react": "^19.1.2",
     "@types/react-dom": "^19.1.2",
     "@vitejs/plugin-react": "^4.4.1",

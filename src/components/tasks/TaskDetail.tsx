@@ -4,6 +4,7 @@ import remarkGfm from "remark-gfm";
 import { useTaskStore } from "../../store/tasks";
 import { StatusBadge } from "../common/Badge";
 import { PipelineView } from "./PipelineView";
+import { ReportDiff } from "./ReportDiff";
 import type { TurnDetail } from "../../types";
 
 const mdComponents = {
@@ -27,12 +28,15 @@ export function TaskDetail() {
   const followup = useTaskStore((s) => s.followup);
   const retry = useTaskStore((s) => s.retry);
   const cancel = useTaskStore((s) => s.cancel);
+  const togglePin = useTaskStore((s) => s.togglePin);
+  const setTags = useTaskStore((s) => s.setTags);
 
   const [followupMessage, setFollowupMessage] = useState("");
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [viewingTurnSeq, setViewingTurnSeq] = useState<number | null>(null);
   const [copied, setCopied] = useState(false);
+  const [tagInput, setTagInput] = useState("");
 
   useEffect(() => {
     setFollowupMessage("");
@@ -168,6 +172,56 @@ export function TaskDetail() {
             <h2 className="text-lg font-semibold text-snow line-clamp-2 font-[family-name:var(--font-heading)] tracking-tight">
               {task.goal}
             </h2>
+            {/* Tags + pin */}
+            <div className="mt-2 flex items-center gap-2 flex-wrap">
+              <button
+                onClick={() => togglePin(activeTaskId!)}
+                className={`text-xs px-1.5 py-0.5 rounded border transition-colors ${
+                  task.pinned
+                    ? "text-warning border-warning/30 bg-warning-dim"
+                    : "text-slate-steel border-charcoal hover:text-warning hover:border-warning/30"
+                }`}
+              >
+                {task.pinned ? "★ Pinned" : "☆ Pin"}
+              </button>
+              {task.tags.map((tag) => (
+                <span
+                  key={tag}
+                  className="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-pill bg-info-dim text-info border border-info/20"
+                >
+                  #{tag}
+                  <button
+                    onClick={() =>
+                      setTags(
+                        activeTaskId!,
+                        task.tags.filter((t) => t !== tag)
+                      )
+                    }
+                    className="hover:text-danger ml-0.5 text-[10px]"
+                  >
+                    ✕
+                  </button>
+                </span>
+              ))}
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  const t = tagInput.trim().replace(/^#/, "");
+                  if (t && !task.tags.includes(t)) {
+                    setTags(activeTaskId!, [...task.tags, t]);
+                  }
+                  setTagInput("");
+                }}
+                className="inline-flex"
+              >
+                <input
+                  value={tagInput}
+                  onChange={(e) => setTagInput(e.target.value)}
+                  placeholder="+ tag"
+                  className="w-16 bg-transparent border-b border-charcoal text-[11px] text-parchment placeholder:text-slate-steel/50 focus:outline-none focus:border-emerald-signal/50 px-0.5"
+                />
+              </form>
+            </div>
           </div>
           <button onClick={closeTask} className="text-slate-steel hover:text-snow shrink-0 p-1 text-lg" title="Close (Esc)">✕</button>
         </div>
@@ -205,6 +259,11 @@ export function TaskDetail() {
                   turn={viewingTurn}
                   isLatest={isLatestTurn}
                   streamingText={isLatestTurn ? streamingText : ""}
+                  previousReport={
+                    viewingTurn && viewingTurn.seq > 0
+                      ? task.turns.find((t) => t.seq === viewingTurn.seq - 1)?.report
+                      : undefined
+                  }
                 />
               )}
 
@@ -271,11 +330,14 @@ function ReportView({
   turn,
   isLatest,
   streamingText,
+  previousReport,
 }: {
   turn: TurnDetail;
   isLatest: boolean;
   streamingText: string;
+  previousReport?: string;
 }) {
+  const [showDiff, setShowDiff] = useState(false);
   const duration = turn.completedAt && turn.createdAt
     ? ((turn.completedAt - turn.createdAt) / 1000).toFixed(1)
     : null;
@@ -323,12 +385,35 @@ function ReportView({
         <div className="bg-danger-dim border border-danger/20 rounded-md px-4 py-3 text-sm text-danger">{turn.error}</div>
       )}
       {displayReport && (
-        <div className="prose-hermes">
-          <ReactMarkdown remarkPlugins={[remarkGfm]} components={mdComponents}>
-            {displayReport}
-          </ReactMarkdown>
-          {isStreaming && <span className="inline-block w-2 h-4 bg-emerald-signal/60 animate-pulse ml-0.5" />}
-        </div>
+        <>
+          {previousReport && (
+            <div className="mb-3 flex items-center gap-2">
+              <button
+                onClick={() => setShowDiff((d) => !d)}
+                className={`px-2.5 py-1 rounded-md text-[11px] font-medium border transition-colors ${
+                  showDiff
+                    ? "bg-emerald-dim border-emerald-signal/50 text-emerald-signal"
+                    : "bg-carbon border-charcoal text-slate-steel hover:border-charcoal-light"
+                }`}
+              >
+                {showDiff ? "Hide diff" : "Show diff"}
+              </button>
+              <span className="text-[10px] text-slate-steel">
+                vs v{turn.seq}
+              </span>
+            </div>
+          )}
+          {showDiff && previousReport ? (
+            <ReportDiff oldText={previousReport} newText={displayReport} />
+          ) : (
+            <div className="prose-hermes">
+              <ReactMarkdown remarkPlugins={[remarkGfm]} components={mdComponents}>
+                {displayReport}
+              </ReactMarkdown>
+              {isStreaming && <span className="inline-block w-2 h-4 bg-emerald-signal/60 animate-pulse ml-0.5" />}
+            </div>
+          )}
+        </>
       )}
     </div>
   );
