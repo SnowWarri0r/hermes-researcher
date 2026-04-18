@@ -127,7 +127,7 @@ function PhaseRow({
         {!compact && (
           <span className={`text-sm shrink-0 ${meta.color}`}>{meta.icon}</span>
         )}
-        <span className="text-[13px] text-snow flex-1 truncate">
+        <span className="text-[13px] text-snow flex-1 min-w-0 break-words" title={phase.label}>
           {phase.label}
         </span>
         {phase.usage?.total_tokens !== undefined && (
