@@ -7,13 +7,29 @@ function styleGuide(language?: string): string {
 
   return `## Style rules
 
-- Produce a **standalone research report**, not a conversational reply.${langRule}
+- Produce a **standalone research report** — an analyst's synthesis, not a news summary.${langRule}
 - Do not address the reader directly ("you", "your", "let me know"). Write in third person.
 - Do not offer follow-ups, apologize for limitations, or narrate your process.
 - Do not include a closing sign-off.
 - Use Markdown: \`##\` / \`###\` headings, bullet / numbered lists, tables, fenced code blocks with language tags.
-- Lead with a "## TL;DR" section (1–3 sentences of key findings), then detailed sections.
-- Cite sources inline with Markdown links when making specific claims.`;
+- Lead with a "## TL;DR" section (1–3 sentences distilling the **main thesis**, not a topic list).
+- Cite sources inline with Markdown links when making specific claims.
+
+## Anti-patterns to avoid
+
+- ❌ **Running account / 流水账**: "source A reported X. source B reported Y. source C reported Z." — this is aggregation, not analysis.
+- ❌ **Each section = one source**: sections should be **themes** that cut across sources, not one-source-per-section.
+- ❌ **Passive reporting**: "the article says..." / "some users discussed..." — make claims with authority.
+- ❌ **Hedging without cause**: avoid "may", "might", "could potentially" unless the evidence genuinely warrants it.
+- ❌ **Bullet-list-everything**: prose paragraphs for analysis; bullets only for discrete enumerable items.
+
+## Required analytical moves
+
+- **Signal vs noise**: explicitly call out what's new/important vs hype/repetition.
+- **Cross-source synthesis**: when two or more sources touch a theme, combine their evidence into one paragraph. Cite all of them.
+- **Contradictions**: if sources disagree, name the disagreement and take a stance when evidence permits.
+- **Weak signals / implications**: go beyond what's literally in the findings — what does this mean for the reader, practically?
+- **Numbers over adjectives**: prefer "58% improvement, 401 upvotes, $12M raise" over "significant", "popular", "well-funded".`;
 }
 
 // ---------------------------------------------------------------------------
@@ -171,7 +187,7 @@ export function draftPrompt(opts: {
 
   return `# Report drafting
 
-Write a research report from these findings.
+You are an analyst writing a synthesized report — not a news aggregator.
 
 ## Goal
 
@@ -182,13 +198,17 @@ ${opts.context ? `\n## Context\n\n${opts.context}\n` : ""}
 
 ${opts.plan.sections.map((s) => `- ${s}`).join("\n")}
 
-## Research findings
+## Research findings (raw input from parallel investigations)
 
 ${findingsBlock}
 
-## Instructions
+## How to synthesize
 
-Synthesize findings into the planned sections. Preserve citations. Don't just concatenate — integrate.
+1. **Read all findings first**. Identify 3-5 **themes or insights** that cut across them.
+2. **Each section = a theme, NOT a question**. If research question Q2 covered "Hugging Face models" and Q3 covered "arXiv papers", but both reveal "open models are pivoting to agent capabilities", that's ONE section, not two.
+3. **Lead each section with the insight**, then support with evidence from multiple findings.
+4. **TL;DR states the thesis** — what's the ONE most important takeaway the reader should walk away with? Not "we investigated X, Y, Z".
+5. **Don't waste prose restating findings**. The reader will read your synthesis, not the raw findings — add interpretation, connections, and implications the findings didn't state directly.
 
 ${styleGuide(opts.language)}`;
 }
@@ -214,12 +234,14 @@ ${opts.draft}
 
 Produce a **concise** critique (300–500 words max). Focus on the top issues only:
 
-1. **Content gaps** — what important aspects are missing?
-2. **Weak claims** — which assertions lack evidence?
-3. **Structure** — does the TL;DR actually summarize? Redundant sections?
-4. **Citations** — missing or suspicious?
+1. **Running-account detection (流水账)** — are sections organized "one-source-per-section" instead of by theme? Does the draft just summarize each finding in sequence without synthesis? This is the #1 problem to flag.
+2. **Weak thesis** — does the TL;DR state a clear takeaway, or just list what was investigated?
+3. **Missing analysis** — where does the draft restate findings without adding interpretation, cross-source connection, or implications?
+4. **Content gaps** — what important aspects are missing?
+5. **Weak claims** — assertions that lack evidence or overhedge ("may", "could", "some").
+6. **Citations** — missing on specific claims, or suspicious sources.
 
-End with a **numbered priority fix list** (top 3–5 changes only). Skip categories with no real issues.
+End with a **numbered priority fix list** (top 3–5 changes). For each, specify: which section needs work, what's wrong, and what the revised section should do differently.
 
 Be direct and specific. Don't pad with praise.`;
 }
@@ -236,12 +258,14 @@ ${opts.goal}
 
 Produce a **concise** critique (300–500 words max). Focus on the top issues only:
 
-1. **Content gaps** — what important aspects are missing?
-2. **Weak claims** — which assertions lack evidence?
-3. **Structure** — does the TL;DR actually summarize? Redundant sections?
-4. **Citations** — missing or suspicious?
+1. **Running-account detection (流水账)** — are sections organized "one-source-per-section" instead of by theme? Does the draft just summarize each finding in sequence without synthesis? This is the #1 problem to flag.
+2. **Weak thesis** — does the TL;DR state a clear takeaway, or just list what was investigated?
+3. **Missing analysis** — where does the draft restate findings without adding interpretation, cross-source connection, or implications?
+4. **Content gaps** — what important aspects are missing?
+5. **Weak claims** — assertions that lack evidence or overhedge ("may", "could", "some").
+6. **Citations** — missing on specific claims, or suspicious sources.
 
-End with a **numbered priority fix list** (top 3–5 changes only). Skip categories with no real issues.
+End with a **numbered priority fix list** (top 3–5 changes). For each, specify: which section needs work, what's wrong, and what the revised section should do differently.
 
 Be direct and specific. Don't pad with praise.`;
 }
