@@ -134,6 +134,13 @@ export interface ModelRouting {
   revise: string;     // strong model for final output
 }
 
+export interface EmbeddingSettings {
+  endpoint: string;     // e.g. "http://127.0.0.1:18792/v1" or "https://api.openai.com"
+  apiKey: string;
+  model: string;        // e.g. "text-embedding-3-small" or "ep-xxx"
+  dimensions: number;   // 1536 for OpenAI small, 2048 for doubao, etc.
+}
+
 export const DEFAULT_MODEL_ROUTING: ModelRouting = {
   plan: "",       // empty = use hermes default
   research: "",

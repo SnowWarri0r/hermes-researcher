@@ -207,11 +207,25 @@ app.delete("/api/templates/:id", (c) => {
 // Knowledge base
 // ---------------------------------------------------------------------------
 import { listAllKnowledge, deleteKnowledgeEntry } from "./knowledge.ts";
+import { getEmbedding, isEmbeddingConfigured } from "./embedding.ts";
 
 app.get("/api/knowledge", (c) => {
   const q = c.req.query("q")?.trim();
   if (q) return c.json(store.searchKnowledge(q, 10));
   return c.json(listAllKnowledge());
+});
+
+app.post("/api/test-embedding", async (c) => {
+  try {
+    // Save config first, then test
+    const result = await getEmbedding("test embedding connection");
+    if (result) {
+      return c.json({ ok: true, dimensions: result.length });
+    }
+    return c.json({ ok: false, error: "No embedding returned. Check endpoint/key/model." });
+  } catch (e) {
+    return c.json({ ok: false, error: e instanceof Error ? e.message : String(e) });
+  }
 });
 
 app.delete("/api/knowledge/:id", (c) => {
