@@ -55,6 +55,16 @@ export function Sidebar() {
           }
         />
         <SidebarLink
+          to="/schedules"
+          label="Schedules"
+          icon={
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+              <circle cx="8" cy="8" r="5.5" stroke="currentColor" strokeWidth="1.5" />
+              <path d="M8 4.5v4l2.5 1.5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          }
+        />
+        <SidebarLink
           to="/settings"
           label="Settings"
           icon={
