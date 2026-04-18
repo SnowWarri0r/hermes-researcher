@@ -1,0 +1,32 @@
+{
+  "name": "hermes-dashboard",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "concurrently -k -n server,ui -c blue,green \"pnpm run dev:server\" \"pnpm run dev:ui\"",
+    "dev:server": "cd server && HERMES_API_KEY=${HERMES_API_KEY} npx tsx watch src/index.ts",
+    "dev:ui": "vite",
+    "build": "tsc -b && vite build",
+    "build:server": "cd server && npx tsc --noEmit",
+    "preview": "vite preview",
+    "start": "cd server && HERMES_API_KEY=${HERMES_API_KEY} node --import tsx src/index.ts"
+  },
+  "dependencies": {
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "react-markdown": "^10.1.0",
+    "remark-gfm": "^4.0.1",
+    "zustand": "^5.0.5"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.1.4",
+    "@types/react": "^19.1.2",
+    "@types/react-dom": "^19.1.2",
+    "@vitejs/plugin-react": "^4.4.1",
+    "concurrently": "^9.2.1",
+    "tailwindcss": "^4.1.4",
+    "typescript": "~5.8.3",
+    "vite": "^6.3.2"
+  }
+}

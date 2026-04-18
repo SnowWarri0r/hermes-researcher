@@ -1,0 +1,335 @@
+import { useEffect, useState, useCallback } from "react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
+import { useTaskStore } from "../../store/tasks";
+import { StatusBadge } from "../common/Badge";
+import { PipelineView } from "./PipelineView";
+import type { TurnDetail } from "../../types";
+
+const mdComponents = {
+  a: ({
+    href,
+    children,
+    ...rest
+  }: React.AnchorHTMLAttributes<HTMLAnchorElement>) => (
+    <a href={href} target="_blank" rel="noopener noreferrer" {...rest}>
+      {children}
+    </a>
+  ),
+};
+
+export function TaskDetail() {
+  const activeTaskId = useTaskStore((s) => s.activeTaskId);
+  const task = useTaskStore((s) => s.activeTaskDetail);
+  const loadError = useTaskStore((s) => s.activeTaskError);
+  const streamingText = useTaskStore((s) => s.streamingText);
+  const closeTask = useTaskStore((s) => s.closeTask);
+  const followup = useTaskStore((s) => s.followup);
+  const retry = useTaskStore((s) => s.retry);
+  const cancel = useTaskStore((s) => s.cancel);
+
+  const [followupMessage, setFollowupMessage] = useState("");
+  const [sending, setSending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [viewingTurnSeq, setViewingTurnSeq] = useState<number | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    setFollowupMessage("");
+    setError(null);
+    setViewingTurnSeq(null);
+    setCopied(false);
+  }, [activeTaskId]);
+
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") closeTask();
+    }
+    if (activeTaskId) {
+      window.addEventListener("keydown", onKey);
+      return () => window.removeEventListener("keydown", onKey);
+    }
+  }, [activeTaskId, closeTask]);
+
+  const handleCopy = useCallback(() => {
+    if (!task?.result) return;
+    navigator.clipboard.writeText(task.result).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  }, [task?.result]);
+
+  const handleDownload = useCallback(() => {
+    if (!task?.result) return;
+    const blob = new Blob([task.result], { type: "text/markdown" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    const slug = task.goal.slice(0, 40).replace(/[^a-zA-Z0-9\u4e00-\u9fff]+/g, "-");
+    a.download = `${slug}.md`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }, [task?.result, task?.goal]);
+
+  if (!activeTaskId) return null;
+
+  if (!task) {
+    return (
+      <>
+        <div onClick={closeTask} className="fixed inset-0 bg-black/60 z-40 animate-fade-in" />
+        <div className="fixed top-0 right-0 bottom-0 w-[min(960px,90vw)] bg-abyss border-l border-charcoal z-50 flex items-center justify-center animate-slide-in">
+          {loadError ? (
+            <div className="text-center max-w-sm px-6">
+              <div className="text-danger text-sm font-medium mb-2">Task not found</div>
+              <div className="text-xs text-slate-steel mb-4 font-mono">{loadError}</div>
+              <button onClick={closeTask} className="px-4 py-1.5 bg-carbon border border-charcoal rounded-md text-xs text-parchment hover:border-charcoal-light">Close</button>
+            </div>
+          ) : (
+            <div className="text-sm text-slate-steel animate-pulse">Loading...</div>
+          )}
+        </div>
+      </>
+    );
+  }
+
+  const latestTurn = task.turns[task.turns.length - 1];
+  const viewingTurn = viewingTurnSeq !== null
+    ? task.turns.find((t) => t.seq === viewingTurnSeq)
+    : latestTurn;
+  const isLatestTurn = viewingTurn?.seq === latestTurn?.seq;
+  const canFollowup = task.status !== "running";
+
+  const totalDuration = task.completedAt && task.createdAt
+    ? ((task.completedAt - task.createdAt) / 1000).toFixed(1)
+    : null;
+
+  async function handleFollowup(e: React.FormEvent) {
+    e.preventDefault();
+    const msg = followupMessage.trim();
+    if (!msg || sending) return;
+    setSending(true);
+    setError(null);
+    try {
+      await followup(activeTaskId!, msg);
+      setFollowupMessage("");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed");
+    } finally {
+      setSending(false);
+    }
+  }
+
+  return (
+    <>
+      <div onClick={closeTask} className="fixed inset-0 bg-black/60 z-40 animate-fade-in" />
+      <div className="fixed top-0 right-0 bottom-0 w-[min(1100px,92vw)] bg-abyss border-l border-charcoal z-50 flex flex-col animate-slide-in">
+        {/* Header */}
+        <div className="px-6 py-4 border-b border-charcoal flex items-start justify-between gap-4 shrink-0">
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-3 mb-2 flex-wrap">
+              <StatusBadge status={task.status} />
+              {task.turnCount > 1 && (
+                <span className="text-[11px] font-mono text-emerald-signal">v{task.turnCount}</span>
+              )}
+              {totalDuration && (
+                <span className="text-[11px] font-mono text-slate-steel">{totalDuration}s</span>
+              )}
+              {task.usage?.total_tokens !== undefined && (
+                <span className="text-[11px] font-mono text-slate-steel" title={`in ${task.usage.input_tokens ?? "?"} / out ${task.usage.output_tokens ?? "?"}`}>
+                  {task.usage.total_tokens.toLocaleString()} tok
+                </span>
+              )}
+              <span className="text-[10px] font-mono text-slate-steel/50 px-1.5 py-0.5 rounded bg-carbon border border-charcoal-subtle">{task.mode}</span>
+
+              {/* Action buttons */}
+              <div className="flex items-center gap-2 ml-auto">
+                {task.result && (
+                  <>
+                    <button onClick={handleCopy} className="px-2.5 py-1 text-[11px] font-medium bg-carbon border border-charcoal rounded-md text-parchment hover:border-charcoal-light transition-colors">
+                      {copied ? "Copied" : "Copy MD"}
+                    </button>
+                    <button onClick={handleDownload} className="px-2.5 py-1 text-[11px] font-medium bg-carbon border border-charcoal rounded-md text-parchment hover:border-charcoal-light transition-colors">
+                      .md ↓
+                    </button>
+                  </>
+                )}
+                {task.status === "failed" && (
+                  <button onClick={() => retry(activeTaskId!)} className="px-2.5 py-1 text-[11px] font-medium bg-carbon border border-charcoal rounded-md text-warning hover:border-warning/30 transition-colors">
+                    Retry
+                  </button>
+                )}
+                {task.status === "running" && (
+                  <button onClick={() => cancel(activeTaskId!)} className="px-2.5 py-1 text-[11px] font-medium bg-danger-dim border border-danger/30 rounded-md text-danger hover:border-danger/50 transition-colors">
+                    Cancel
+                  </button>
+                )}
+              </div>
+            </div>
+            <h2 className="text-lg font-semibold text-snow line-clamp-2 font-[family-name:var(--font-heading)] tracking-tight">
+              {task.goal}
+            </h2>
+          </div>
+          <button onClick={closeTask} className="text-slate-steel hover:text-snow shrink-0 p-1 text-lg" title="Close (Esc)">✕</button>
+        </div>
+
+        {/* Body */}
+        <div className="flex-1 overflow-y-auto">
+          <div className="px-6 py-5 grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-6">
+            {/* Report column */}
+            <div className="min-w-0">
+              {task.turns.length > 1 && (
+                <div className="flex items-center gap-1.5 mb-4 flex-wrap">
+                  <span className="text-[11px] text-slate-steel uppercase tracking-wider mr-1">Version</span>
+                  {task.turns.map((turn) => (
+                    <button
+                      key={turn.seq}
+                      onClick={() => setViewingTurnSeq(turn.seq)}
+                      className={`px-2.5 py-1 rounded-md text-[11px] font-mono border transition-colors ${
+                        viewingTurn?.seq === turn.seq
+                          ? "bg-emerald-dim border-emerald-signal/50 text-emerald-signal"
+                          : "bg-carbon border-charcoal text-parchment hover:border-charcoal-light"
+                      }`}
+                      title={turn.userMessage}
+                    >
+                      v{turn.seq + 1}
+                    </button>
+                  ))}
+                  {!isLatestTurn && (
+                    <button onClick={() => setViewingTurnSeq(null)} className="ml-2 text-[11px] text-slate-steel hover:text-parchment">← latest</button>
+                  )}
+                </div>
+              )}
+
+              {viewingTurn && (
+                <ReportView
+                  turn={viewingTurn}
+                  isLatest={isLatestTurn}
+                  streamingText={isLatestTurn ? streamingText : ""}
+                />
+              )}
+
+              {isLatestTurn && (
+                <form onSubmit={handleFollowup} className="mt-8 bg-carbon border border-charcoal rounded-lg p-4">
+                  <div className="text-xs font-medium text-slate-steel uppercase tracking-wider mb-2">Refine this report</div>
+                  <textarea
+                    value={followupMessage}
+                    onChange={(e) => setFollowupMessage(e.target.value)}
+                    placeholder="Expand section 2 with examples. Add a comparison table..."
+                    rows={3}
+                    disabled={!canFollowup || sending}
+                    className="w-full bg-abyss border border-charcoal rounded-md px-3 py-2.5 text-sm text-snow placeholder:text-slate-steel focus:outline-none focus:border-emerald-signal/50 resize-none disabled:opacity-50"
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) handleFollowup(e);
+                    }}
+                  />
+                  {error && <div className="mt-2 text-xs text-danger">{error}</div>}
+                  <div className="mt-3 flex items-center justify-between">
+                    <span className="text-[11px] text-slate-steel font-mono">
+                      {canFollowup ? "Ctrl+Enter · runs full pipeline" : "Pipeline running..."}
+                    </span>
+                    <button type="submit" disabled={!followupMessage.trim() || sending || !canFollowup} className="px-4 py-1.5 bg-carbon border border-charcoal rounded-md text-xs font-medium text-mint hover:border-emerald-signal/50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
+                      {sending ? "Submitting..." : "Refine"}
+                    </button>
+                  </div>
+                </form>
+              )}
+            </div>
+
+            {/* Sidebar */}
+            <div className="space-y-5 min-w-0">
+              {task.context && (
+                <div>
+                  <div className="text-xs font-medium text-slate-steel uppercase tracking-wider mb-2">Context</div>
+                  <div className="text-[12px] text-parchment bg-carbon border border-charcoal-subtle rounded-md px-3 py-2 font-mono whitespace-pre-wrap max-h-[180px] overflow-y-auto">{task.context}</div>
+                </div>
+              )}
+              {task.toolsets.length > 0 && (
+                <div>
+                  <div className="text-xs font-medium text-slate-steel uppercase tracking-wider mb-2">Toolsets</div>
+                  <div className="flex gap-1.5 flex-wrap">
+                    {task.toolsets.map((ts) => (
+                      <span key={ts} className="text-[11px] px-2 py-0.5 bg-carbon border border-charcoal rounded text-parchment font-mono">{ts}</span>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {viewingTurn && viewingTurn.phases.length > 0 && (
+                <div>
+                  <div className="text-xs font-medium text-slate-steel uppercase tracking-wider mb-2">Pipeline · v{viewingTurn.seq + 1}</div>
+                  <PipelineView phases={viewingTurn.phases} />
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    </>
+  );
+}
+
+function ReportView({
+  turn,
+  isLatest,
+  streamingText,
+}: {
+  turn: TurnDetail;
+  isLatest: boolean;
+  streamingText: string;
+}) {
+  const duration = turn.completedAt && turn.createdAt
+    ? ((turn.completedAt - turn.createdAt) / 1000).toFixed(1)
+    : null;
+
+  const revisePhase = turn.phases.find((p) => p.kind === "revise");
+  const draftPhase = turn.phases.find((p) => p.kind === "draft");
+  const writePhase = turn.phases.find((p) => p.kind === "write");
+
+  // Show best available: final report > revise output > draft output > streaming text
+  const persistedReport =
+    turn.report ||
+    revisePhase?.output ||
+    writePhase?.output ||
+    draftPhase?.output ||
+    "";
+
+  const displayReport = persistedReport || (isLatest ? streamingText : "");
+  const isStreaming = isLatest && !persistedReport && streamingText.length > 0;
+
+  return (
+    <div>
+      {turn.seq > 0 && (
+        <div className="mb-4 bg-carbon border border-charcoal rounded-md px-4 py-2.5">
+          <div className="text-[10px] text-slate-steel uppercase tracking-wider mb-1">Revision request</div>
+          <div className="text-[13px] text-parchment whitespace-pre-wrap">{turn.userMessage}</div>
+        </div>
+      )}
+
+      <div className="flex items-center gap-3 mb-3 flex-wrap">
+        <div className="text-xs font-medium text-slate-steel uppercase tracking-wider">
+          {turn.seq === 0 ? "Report" : `Version ${turn.seq + 1}`}
+          {!isLatest && <span className="ml-2 text-[10px] text-slate-steel/60 normal-case tracking-normal">(historical)</span>}
+          {isStreaming && <span className="ml-2 text-[10px] text-agent-thinking animate-pulse normal-case tracking-normal">streaming...</span>}
+        </div>
+        <StatusBadge status={turn.status} />
+        {duration && <span className="text-[11px] font-mono text-slate-steel">{duration}s</span>}
+      </div>
+
+      {turn.status === "running" && !displayReport && (
+        <div className="text-sm text-agent-thinking animate-pulse">
+          Pipeline running — see sidebar for phase progress.
+        </div>
+      )}
+      {turn.error && (
+        <div className="bg-danger-dim border border-danger/20 rounded-md px-4 py-3 text-sm text-danger">{turn.error}</div>
+      )}
+      {displayReport && (
+        <div className="prose-hermes">
+          <ReactMarkdown remarkPlugins={[remarkGfm]} components={mdComponents}>
+            {displayReport}
+          </ReactMarkdown>
+          {isStreaming && <span className="inline-block w-2 h-4 bg-emerald-signal/60 animate-pulse ml-0.5" />}
+        </div>
+      )}
+    </div>
+  );
+}
