@@ -9,6 +9,7 @@ import {
   subscribeToTask,
   cancelTask as apiCancel,
 } from "../api/client";
+import { sendNotification } from "../hooks/useNotification";
 
 interface TaskStore {
   tasks: Task[];
@@ -30,7 +31,7 @@ interface TaskStore {
   refreshList: () => Promise<void>;
   refreshActive: () => Promise<void>;
 
-  dispatch: (goal: string, context: string, toolsets: string[], mode: TaskMode) => Promise<void>;
+  dispatch: (goal: string, context: string, toolsets: string[], mode: TaskMode, language?: string) => Promise<void>;
   followup: (id: string, message: string) => Promise<void>;
   retry: (id: string) => Promise<void>;
   cancel: (id: string) => Promise<void>;
@@ -96,8 +97,8 @@ export const useTaskStore = create<TaskStore>()((set, get) => ({
     }
   },
 
-  async dispatch(goal, context, toolsets, mode) {
-    await apiCreate({ goal, context, toolsets, mode });
+  async dispatch(goal, context, toolsets, mode, language) {
+    await apiCreate({ goal, context, toolsets, mode, language: language || undefined });
     await get().refreshList();
   },
 
@@ -163,13 +164,22 @@ export const useTaskStore = create<TaskStore>()((set, get) => ({
               get().refreshActive();
             }
 
-            if (
-              event.event === "pipeline.completed" ||
-              event.event === "pipeline.failed"
-            ) {
+            if (event.event === "pipeline.completed") {
               set({ streamingText: "" });
               get().refreshActive();
               get().refreshList();
+              const task = get().activeTaskDetail;
+              sendNotification(
+                "Task completed",
+                task?.goal.slice(0, 80) ?? "Research finished"
+              );
+            }
+
+            if (event.event === "pipeline.failed") {
+              set({ streamingText: "" });
+              get().refreshActive();
+              get().refreshList();
+              sendNotification("Task failed", "A research task encountered an error");
             }
           },
           () => {},

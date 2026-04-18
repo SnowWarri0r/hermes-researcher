@@ -15,6 +15,7 @@ import type {
   PhaseDetail,
   PhaseKind,
   PhaseStatus,
+  PipelineProgress,
 } from "../../shared/types.ts";
 
 const DB_DIR = join(homedir(), ".hermes-dashboard");
@@ -32,6 +33,7 @@ db.exec(`
     context     TEXT NOT NULL DEFAULT '',
     toolsets    TEXT NOT NULL DEFAULT '[]',
     mode        TEXT NOT NULL DEFAULT 'deep',
+    language    TEXT NOT NULL DEFAULT '',
     created_at  INTEGER NOT NULL
   );
 
@@ -97,6 +99,7 @@ interface TaskRow {
   context: string;
   toolsets: string;
   mode: string;
+  language: string;
   created_at: number;
 }
 
@@ -164,13 +167,41 @@ function rowToTurn(r: TurnRow, phaseCount: number): Turn {
   };
 }
 
+const selectPhaseSummaryForLatestTurn = db.prepare(`
+  SELECT p.kind, p.label, p.status
+  FROM phases p
+  JOIN turns t ON t.id = p.turn_id
+  WHERE t.task_id = ?
+    AND t.seq = (SELECT MAX(t2.seq) FROM turns t2 WHERE t2.task_id = ?)
+  ORDER BY p.seq ASC, p.branch ASC
+`);
+
+function getProgress(taskId: string): PipelineProgress | undefined {
+  const rows = selectPhaseSummaryForLatestTurn.all(taskId, taskId) as {
+    kind: string;
+    label: string;
+    status: string;
+  }[];
+  if (rows.length === 0) return undefined;
+
+  const total = rows.length;
+  const done = rows.filter((r) => r.status === "completed").length;
+  const running = rows.find((r) => r.status === "running");
+  const current = running?.label ?? rows.find((r) => r.status === "pending")?.label ?? "";
+
+  if (done === total) return undefined; // no progress needed when done
+  return { current, done, total };
+}
+
 function composeTask(task: TaskRow, latest?: Turn, turnCount = 0): Task {
+  const progress = latest?.status === "running" ? getProgress(task.id) : undefined;
   return {
     id: task.id,
     goal: task.goal,
     context: task.context,
     toolsets: JSON.parse(task.toolsets),
     mode: (task.mode as TaskMode) || "deep",
+    language: task.language || "",
     createdAt: task.created_at,
     status: (latest?.status as TaskStatus) ?? "running",
     result: latest?.report ?? "",
@@ -178,6 +209,7 @@ function composeTask(task: TaskRow, latest?: Turn, turnCount = 0): Task {
     completedAt: latest?.completedAt,
     usage: latest?.usage,
     turnCount,
+    progress,
   };
 }
 
@@ -186,7 +218,7 @@ function composeTask(task: TaskRow, latest?: Turn, turnCount = 0): Task {
 // -----------------------------------------------------------------------------
 const stmts = {
   insertTask: db.prepare(
-    `INSERT INTO tasks (id, goal, context, toolsets, mode, created_at) VALUES (?, ?, ?, ?, ?, ?)`
+    `INSERT INTO tasks (id, goal, context, toolsets, mode, language, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)`
   ),
   selectTask: db.prepare(`SELECT * FROM tasks WHERE id = ?`),
   listTasks: db.prepare(
@@ -275,6 +307,7 @@ export const store = {
     context: string;
     toolsets: string[];
     mode: TaskMode;
+    language: string;
     createdAt: number;
   }) {
     stmts.insertTask.run(
@@ -283,6 +316,7 @@ export const store = {
       opts.context,
       JSON.stringify(opts.toolsets),
       opts.mode,
+      opts.language,
       opts.createdAt
     );
   },

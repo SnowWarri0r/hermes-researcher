@@ -5,6 +5,19 @@ import { TASK_MODE_META } from "../../types";
 import type { TaskMode } from "../../types";
 
 const MODES: TaskMode[] = ["quick", "standard", "deep"];
+const LANGUAGES = [
+  { value: "", label: "Auto" },
+  { value: "Chinese (简体中文)", label: "中文" },
+  { value: "English", label: "EN" },
+  { value: "Japanese (日本語)", label: "JP" },
+];
+
+function getStoredLanguage(): string {
+  try { return localStorage.getItem("hermes-language") ?? ""; } catch { return ""; }
+}
+function storeLanguage(v: string) {
+  try { localStorage.setItem("hermes-language", v); } catch { /* */ }
+}
 
 export function TaskCreator() {
   const dispatch = useTaskStore((s) => s.dispatch);
@@ -13,6 +26,8 @@ export function TaskCreator() {
   const [context, setContext] = useState("");
   const [toolsets, setToolsets] = useState<string[]>([]);
   const [mode, setMode] = useState<TaskMode>("deep");
+  const [language, setLanguageState] = useState(getStoredLanguage);
+  const setLanguage = (v: string) => { setLanguageState(v); storeLanguage(v); };
   const [showContext, setShowContext] = useState(false);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -24,7 +39,7 @@ export function TaskCreator() {
     setSending(true);
     setError(null);
     try {
-      await dispatch(goal.trim(), context.trim(), toolsets, mode);
+      await dispatch(goal.trim(), context.trim(), toolsets, mode, language || undefined);
       setGoal("");
       setContext("");
       setToolsets([]);
@@ -108,6 +123,27 @@ export function TaskCreator() {
               </button>
             );
           })}
+        </div>
+      </div>
+
+      {/* Language */}
+      <div className="mt-3 flex items-center gap-2">
+        <div className="text-xs text-slate-steel">Language</div>
+        <div className="flex gap-1">
+          {LANGUAGES.map((l) => (
+            <button
+              key={l.value}
+              type="button"
+              onClick={() => setLanguage(l.value)}
+              className={`px-2 py-1 rounded-md text-[11px] font-medium border transition-colors ${
+                language === l.value
+                  ? "bg-emerald-dim border-emerald-signal/50 text-emerald-signal"
+                  : "bg-carbon border-charcoal text-slate-steel hover:text-parchment hover:border-charcoal-light"
+              }`}
+            >
+              {l.label}
+            </button>
+          ))}
         </div>
       </div>
 

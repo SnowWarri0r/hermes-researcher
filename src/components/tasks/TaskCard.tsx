@@ -35,6 +35,8 @@ export function TaskCard({ task }: { task: Task }) {
           ? "border-danger/30"
           : "border-charcoal";
 
+  const p = task.progress;
+
   return (
     <div
       onClick={() => openTask(task.id)}
@@ -49,6 +51,24 @@ export function TaskCard({ task }: { task: Task }) {
           {previewLine && (
             <div className="mt-1.5 text-[12px] text-parchment line-clamp-1">
               {previewLine}
+            </div>
+          )}
+
+          {/* Pipeline progress bar */}
+          {p && (
+            <div className="mt-2 flex items-center gap-2">
+              <div className="flex-1 h-1 bg-charcoal-subtle rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-agent-active rounded-full transition-all duration-500"
+                  style={{ width: `${(p.done / p.total) * 100}%` }}
+                />
+              </div>
+              <span className="text-[10px] text-agent-thinking font-mono shrink-0 animate-pulse">
+                {p.current.length > 30 ? p.current.slice(0, 30) + "…" : p.current}
+              </span>
+              <span className="text-[10px] text-slate-steel font-mono shrink-0">
+                {p.done}/{p.total}
+              </span>
             </div>
           )}
 
