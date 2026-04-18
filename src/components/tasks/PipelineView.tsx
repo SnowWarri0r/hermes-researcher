@@ -183,10 +183,15 @@ function PhaseRow({
 }
 
 function PhaseBody({ phase, streamingText }: { phase: PhaseDetail; streamingText?: string }) {
-  const hasOutput = phase.output.trim().length > 0;
+  const isRunning = phase.status === "running";
+  const fromStream = streamingText || "";
+  // For running phases, streaming text is authoritative (live SSE deltas).
+  // phase.output may also be populated (seeded from server buffer) but we
+  // prefer the client-side accumulated stream to avoid flicker/rollback.
+  const displayText = isRunning && fromStream.length > 0 ? fromStream : phase.output;
   const hasEvents = phase.events.length > 0;
-  const displayText = hasOutput ? phase.output : (streamingText || "");
   const hasDisplayText = displayText.trim().length > 0;
+  const showingStream = isRunning && hasDisplayText;
 
   return (
     <div className="border-t border-charcoal-subtle px-3 py-3 space-y-3">
@@ -199,14 +204,14 @@ function PhaseBody({ phase, streamingText }: { phase: PhaseDetail; streamingText
       {hasDisplayText && (
         <div>
           <div className="text-[10px] text-slate-steel uppercase tracking-wider mb-1.5">
-            {hasOutput ? "Output" : "Streaming..."}
+            {showingStream ? "Streaming..." : "Output"}
           </div>
           <div className="bg-abyss border border-charcoal-subtle rounded-md px-3 py-2.5 max-h-[320px] overflow-y-auto">
             <div className="prose-hermes prose-hermes-compact">
               <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex]}>
-                {normalizeLatex(hasOutput ? displayText : sanitizeStreamingMarkdown(displayText))}
+                {normalizeLatex(showingStream ? sanitizeStreamingMarkdown(displayText) : displayText)}
               </ReactMarkdown>
-              {!hasOutput && <span className="inline-block w-1.5 h-4 bg-emerald-signal/70 animate-pulse ml-0.5 align-text-bottom" />}
+              {showingStream && <span className="inline-block w-1.5 h-4 bg-emerald-signal/70 animate-pulse ml-0.5 align-text-bottom" />}
             </div>
           </div>
         </div>
