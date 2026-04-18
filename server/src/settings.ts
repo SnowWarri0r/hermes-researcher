@@ -15,7 +15,7 @@ interface Settings {
 function defaults(): Settings {
   return {
     modelRouting: { ...DEFAULT_MODEL_ROUTING },
-    embedding: { endpoint: "", apiKey: "", model: "", dimensions: 0 },
+    embedding: { provider: "openai", endpoint: "", apiKey: "", model: "", dimensions: 0 },
     templates: [],
   };
 }

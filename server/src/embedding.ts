@@ -1,21 +1,15 @@
 /**
- * Embedding client — calls any OpenAI-compatible /v1/embeddings endpoint.
- * Config is read from settings.json (editable via Settings UI).
- * Falls back to env vars, then disables gracefully.
+ * Embedding client — supports multiple providers natively.
+ * No external proxy needed for Volcengine/Doubao.
  */
 
 import { loadSettings } from "./settings.ts";
+import type { EmbeddingSettings, EmbeddingProvider } from "../../shared/types.ts";
 
-export interface EmbeddingConfig {
-  endpoint: string;   // base URL, e.g. "https://ark.cn-beijing.volces.com/api/v3"
-  apiKey: string;
-  model: string;      // e.g. "ep-20260404142400-s2jc4" or "text-embedding-3-small"
-  dimensions: number; // vector size, must match model output
-}
-
-function getConfig(): EmbeddingConfig {
+function getConfig(): EmbeddingSettings {
   const settings = loadSettings();
   return {
+    provider: settings.embedding?.provider || "openai",
     endpoint:
       settings.embedding?.endpoint ||
       process.env.EMBEDDING_ENDPOINT ||
@@ -27,7 +21,7 @@ function getConfig(): EmbeddingConfig {
     model:
       settings.embedding?.model ||
       process.env.EMBEDDING_MODEL ||
-      "text-embedding-3-small",
+      "",
     dimensions:
       settings.embedding?.dimensions ||
       Number(process.env.EMBEDDING_DIMENSIONS) ||
@@ -36,43 +30,128 @@ function getConfig(): EmbeddingConfig {
 }
 
 export function getEmbeddingDimensions(): number {
-  return getConfig().dimensions;
+  return getConfig().dimensions || 1536;
 }
 
 function isConfigured(): boolean {
   const c = getConfig();
-  return Boolean(c.endpoint && c.apiKey);
+  return Boolean(c.endpoint && c.apiKey && c.model);
 }
+
+export { isConfigured as isEmbeddingConfigured };
+
+// ---------------------------------------------------------------------------
+// Provider implementations
+// ---------------------------------------------------------------------------
+
+async function callOpenAI(
+  c: EmbeddingSettings,
+  texts: string[]
+): Promise<number[][]> {
+  const base = c.endpoint.replace(/\/$/, "");
+  const url = base.endsWith("/v1")
+    ? `${base}/embeddings`
+    : `${base}/v1/embeddings`;
+
+  const res = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${c.apiKey}`,
+    },
+    body: JSON.stringify({
+      input: texts.map((t) => t.slice(0, 8000)),
+      model: c.model,
+    }),
+  });
+
+  if (!res.ok) throw new Error(`Embedding API error: ${res.status}`);
+
+  const data = (await res.json()) as {
+    data: { embedding: number[]; index: number }[];
+  };
+  const result: number[][] = new Array(texts.length);
+  for (const item of data.data) {
+    result[item.index] = item.embedding;
+  }
+  return result;
+}
+
+async function callVolcengine(
+  c: EmbeddingSettings,
+  texts: string[]
+): Promise<number[][]> {
+  // Volcengine Doubao multimodal embedding API
+  // Endpoint: https://ark.cn-beijing.volces.com/api/v3/embeddings/multimodal
+  const base = c.endpoint.replace(/\/$/, "");
+  const url = base.includes("/embeddings")
+    ? base
+    : `${base}/api/v3/embeddings/multimodal`;
+
+  const res = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${c.apiKey}`,
+    },
+    body: JSON.stringify({
+      model: c.model,
+      input: texts.map((text) => ({ type: "text", text: text.slice(0, 8000) })),
+    }),
+  });
+
+  if (!res.ok) throw new Error(`Volcengine API error: ${res.status}`);
+
+  const data = (await res.json()) as {
+    data: { embedding: number[] }[] | { embedding: number[] };
+  };
+
+  const rawItems = Array.isArray(data.data) ? data.data : [data.data];
+  return rawItems.map((item) => item.embedding);
+}
+
+async function callOllama(
+  c: EmbeddingSettings,
+  texts: string[]
+): Promise<number[][]> {
+  // Ollama uses /api/embed (not OpenAI format)
+  const base = c.endpoint.replace(/\/$/, "");
+  const url = `${base}/api/embed`;
+
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      model: c.model,
+      input: texts.map((t) => t.slice(0, 8000)),
+    }),
+  });
+
+  if (!res.ok) throw new Error(`Ollama API error: ${res.status}`);
+
+  const data = (await res.json()) as { embeddings: number[][] };
+  return data.embeddings;
+}
+
+const PROVIDERS: Record<
+  EmbeddingProvider,
+  (c: EmbeddingSettings, texts: string[]) => Promise<number[][]>
+> = {
+  openai: callOpenAI,
+  volcengine: callVolcengine,
+  ollama: callOllama,
+};
+
+// ---------------------------------------------------------------------------
+// Public API
+// ---------------------------------------------------------------------------
 
 export async function getEmbedding(text: string): Promise<number[] | null> {
   if (!isConfigured()) return null;
   const c = getConfig();
-
   try {
-    const base = c.endpoint.replace(/\/$/, "");
-    // Support endpoints that already include /v1 or not
-    const url = base.endsWith("/v1")
-      ? `${base}/embeddings`
-      : `${base}/v1/embeddings`;
-
-    const res = await fetch(url, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${c.apiKey}`,
-      },
-      body: JSON.stringify({
-        input: text.slice(0, 8000),
-        model: c.model,
-      }),
-    });
-
-    if (!res.ok) return null;
-
-    const data = (await res.json()) as {
-      data: { embedding: number[] }[];
-    };
-    return data.data?.[0]?.embedding ?? null;
+    const results = await PROVIDERS[c.provider](c, [text]);
+    return results[0] ?? null;
   } catch {
     return null;
   }
@@ -83,36 +162,9 @@ export async function getEmbeddings(
 ): Promise<(number[] | null)[]> {
   if (!isConfigured() || texts.length === 0) return texts.map(() => null);
   const c = getConfig();
-
   try {
-    const base = c.endpoint.replace(/\/$/, "");
-    const url = base.endsWith("/v1")
-      ? `${base}/embeddings`
-      : `${base}/v1/embeddings`;
-
-    const res = await fetch(url, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${c.apiKey}`,
-      },
-      body: JSON.stringify({
-        input: texts.map((t) => t.slice(0, 8000)),
-        model: c.model,
-      }),
-    });
-
-    if (!res.ok) return texts.map(() => null);
-
-    const data = (await res.json()) as {
-      data: { embedding: number[]; index: number }[];
-    };
-
-    const result: (number[] | null)[] = texts.map(() => null);
-    for (const item of data.data) {
-      result[item.index] = item.embedding;
-    }
-    return result;
+    const results = await PROVIDERS[c.provider](c, texts);
+    return results.map((r) => r ?? null);
   } catch {
     return texts.map(() => null);
   }
@@ -131,5 +183,3 @@ export function cosineSimilarity(a: number[], b: number[]): number {
   const denom = Math.sqrt(normA) * Math.sqrt(normB);
   return denom === 0 ? 0 : dot / denom;
 }
-
-export { isConfigured as isEmbeddingConfigured };

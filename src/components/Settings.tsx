@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useTaskStore } from "../store/tasks";
 import { checkHealth } from "../api/client";
-import type { ModelRouting, TaskTemplate, TemplateVariable, TaskMode, EmbeddingSettings } from "../types";
+import type { ModelRouting, TaskTemplate, TemplateVariable, TaskMode, EmbeddingSettings, EmbeddingProvider } from "../types";
 import { TASK_MODE_META } from "../types";
 
 const API = "/api";
@@ -73,6 +73,12 @@ function ConnectionSection({
   );
 }
 
+const PROVIDER_PRESETS: Record<EmbeddingProvider, { endpoint: string; model: string; dimensions: number; label: string }> = {
+  openai: { endpoint: "https://api.openai.com", model: "text-embedding-3-small", dimensions: 1536, label: "OpenAI" },
+  volcengine: { endpoint: "https://ark.cn-beijing.volces.com", model: "", dimensions: 2048, label: "Volcengine (Doubao)" },
+  ollama: { endpoint: "http://localhost:11434", model: "nomic-embed-text", dimensions: 768, label: "Ollama (local)" },
+};
+
 function EmbeddingSection() {
   const [config, setConfig] = useState<EmbeddingSettings | null>(null);
   const [saving, setSaving] = useState(false);
@@ -81,7 +87,7 @@ function EmbeddingSection() {
   useEffect(() => {
     fetch(`${API}/settings`)
       .then((r) => r.json())
-      .then((d) => setConfig(d.embedding ?? { endpoint: "", apiKey: "", model: "", dimensions: 0 }))
+      .then((d) => setConfig(d.embedding ?? { provider: "openai", endpoint: "", apiKey: "", model: "", dimensions: 0 }))
       .catch(() => {});
   }, []);
 
@@ -132,64 +138,64 @@ function EmbeddingSection() {
       </h2>
       <div className="bg-carbon border border-charcoal rounded-lg p-5 space-y-3">
         <div className="text-xs text-slate-steel mb-1">
-          Any OpenAI-compatible <span className="font-mono text-mint">/v1/embeddings</span> endpoint.
-          Required for semantic knowledge recall.
+          Required for semantic knowledge recall. Select a provider, fill in credentials, then Test.
+        </div>
+
+        {/* Provider tabs */}
+        <div className="flex gap-1.5">
+          {(Object.keys(PROVIDER_PRESETS) as EmbeddingProvider[]).map((p) => (
+            <button
+              key={p}
+              onClick={() => {
+                const preset = PROVIDER_PRESETS[p];
+                setConfig({
+                  ...config,
+                  provider: p,
+                  endpoint: config.endpoint || preset.endpoint,
+                  model: config.model || preset.model,
+                  dimensions: config.dimensions || preset.dimensions,
+                });
+              }}
+              className={`px-3 py-1.5 rounded-md text-[11px] font-medium border transition-colors ${
+                config.provider === p
+                  ? "bg-emerald-dim border-emerald-signal/50 text-emerald-signal"
+                  : "bg-abyss border-charcoal text-slate-steel hover:border-charcoal-light"
+              }`}
+            >
+              {PROVIDER_PRESETS[p].label}
+            </button>
+          ))}
         </div>
 
         <div className="flex items-center gap-3">
           <div className="w-20 shrink-0 text-xs font-medium text-snow">Endpoint</div>
-          <input
-            type="text"
-            value={config.endpoint}
-            onChange={(e) => setConfig({ ...config, endpoint: e.target.value })}
-            placeholder="http://127.0.0.1:18792/v1"
-            className={inputCls}
-          />
+          <input type="text" value={config.endpoint} onChange={(e) => setConfig({ ...config, endpoint: e.target.value })} placeholder={PROVIDER_PRESETS[config.provider].endpoint} className={inputCls} />
         </div>
         <div className="flex items-center gap-3">
           <div className="w-20 shrink-0 text-xs font-medium text-snow">API Key</div>
-          <input
-            type="password"
-            value={config.apiKey}
-            onChange={(e) => setConfig({ ...config, apiKey: e.target.value })}
-            placeholder="sk-... or bearer token"
-            className={inputCls}
-          />
+          <input type="password" value={config.apiKey} onChange={(e) => setConfig({ ...config, apiKey: e.target.value })} placeholder={config.provider === "ollama" ? "(not required)" : "sk-... or API key"} className={inputCls} />
         </div>
         <div className="flex items-center gap-3">
           <div className="w-20 shrink-0 text-xs font-medium text-snow">Model</div>
-          <input
-            type="text"
-            value={config.model}
-            onChange={(e) => setConfig({ ...config, model: e.target.value })}
-            placeholder="text-embedding-3-small"
-            className={inputCls}
-          />
+          <input type="text" value={config.model} onChange={(e) => setConfig({ ...config, model: e.target.value })} placeholder={PROVIDER_PRESETS[config.provider].model || "model-id"} className={inputCls} />
         </div>
         <div className="flex items-center gap-3">
           <div className="w-20 shrink-0 text-xs font-medium text-snow">Dimensions</div>
-          <input
-            type="number"
-            value={config.dimensions || ""}
-            onChange={(e) => setConfig({ ...config, dimensions: Number(e.target.value) || 0 })}
-            placeholder="1536"
-            className={`${inputCls} w-24 flex-none`}
-          />
-          <span className="text-[10px] text-slate-steel">Must match model output. 0 = auto (1536)</span>
+          <input type="number" value={config.dimensions || ""} onChange={(e) => setConfig({ ...config, dimensions: Number(e.target.value) || 0 })} placeholder={String(PROVIDER_PRESETS[config.provider].dimensions)} className={`${inputCls} w-24 flex-none`} />
+          <span className="text-[10px] text-slate-steel">0 = default ({PROVIDER_PRESETS[config.provider].dimensions})</span>
         </div>
 
+        {config.provider === "volcengine" && (
+          <div className="text-[10px] text-slate-steel/60 bg-abyss rounded px-3 py-2 border border-charcoal-subtle">
+            Direct Volcengine Doubao API — no proxy needed. Get your model endpoint ID from the Volcengine console (e.g. <span className="text-mint font-mono">ep-xxxx</span>).
+          </div>
+        )}
+
         <div className="flex items-center gap-3 pt-1">
-          <button
-            onClick={save}
-            disabled={saving}
-            className="px-4 py-1.5 bg-carbon border border-charcoal rounded-md text-xs font-medium text-mint hover:border-emerald-signal/50 disabled:opacity-40 transition-colors"
-          >
+          <button onClick={save} disabled={saving} className="px-4 py-1.5 bg-carbon border border-charcoal rounded-md text-xs font-medium text-mint hover:border-emerald-signal/50 disabled:opacity-40 transition-colors">
             {saving ? "Saving..." : "Save"}
           </button>
-          <button
-            onClick={testConnection}
-            className="px-4 py-1.5 bg-abyss border border-charcoal rounded-md text-xs text-parchment hover:border-charcoal-light transition-colors"
-          >
+          <button onClick={testConnection} className="px-4 py-1.5 bg-abyss border border-charcoal rounded-md text-xs text-parchment hover:border-charcoal-light transition-colors">
             Test
           </button>
           {testResult && (
@@ -197,13 +203,6 @@ function EmbeddingSection() {
               {testResult}
             </span>
           )}
-        </div>
-
-        <div className="text-[10px] text-slate-steel/60 pt-1 space-y-0.5">
-          <div>Common providers:</div>
-          <div className="font-mono">OpenAI: https://api.openai.com · model: text-embedding-3-small · dim: 1536</div>
-          <div className="font-mono">Doubao: http://127.0.0.1:18792/v1 · model: ep-xxx · dim: 2048</div>
-          <div className="font-mono">Ollama: http://localhost:11434 · model: nomic-embed-text · dim: 768</div>
         </div>
       </div>
     </div>

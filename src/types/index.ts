@@ -20,6 +20,7 @@ export type {
   FollowupRequest,
   ModelRouting,
   EmbeddingSettings,
+  EmbeddingProvider,
   TaskTemplate,
   TemplateVariable,
 } from "../../shared/types";
