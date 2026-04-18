@@ -17,6 +17,7 @@ import type {
   PhaseStatus,
   PipelineProgress,
 } from "../../shared/types.ts";
+import { cosineSimilarity } from "./embedding.ts";
 
 const DB_DIR = join(homedir(), ".hermes-dashboard");
 mkdirSync(DB_DIR, { recursive: true });
@@ -97,6 +98,7 @@ db.exec(`
     topic       TEXT NOT NULL,
     summary     TEXT NOT NULL,
     sources     TEXT NOT NULL DEFAULT '[]',
+    embedding   TEXT,
     created_at  INTEGER NOT NULL,
     FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
   );
@@ -552,13 +554,21 @@ export const store = {
     topic: string;
     summary: string;
     sources: string[];
+    embedding?: number[];
     createdAt: number;
   }) {
     const info = db
       .prepare(
-        `INSERT INTO knowledge (task_id, topic, summary, sources, created_at) VALUES (?, ?, ?, ?, ?)`
+        `INSERT INTO knowledge (task_id, topic, summary, sources, embedding, created_at) VALUES (?, ?, ?, ?, ?, ?)`
       )
-      .run(opts.taskId, opts.topic, opts.summary, JSON.stringify(opts.sources), opts.createdAt);
+      .run(
+        opts.taskId,
+        opts.topic,
+        opts.summary,
+        JSON.stringify(opts.sources),
+        opts.embedding ? JSON.stringify(opts.embedding) : null,
+        opts.createdAt
+      );
     // Sync FTS
     db.prepare(
       `INSERT INTO knowledge_fts (rowid, topic, summary) VALUES (?, ?, ?)`
@@ -592,6 +602,45 @@ export const store = {
       summary: r.summary,
       sources: JSON.parse(r.sources),
     }));
+  },
+
+  searchKnowledgeByVector(
+    queryEmbedding: number[],
+    limit = 5,
+    threshold = 0.3
+  ): { topic: string; summary: string; sources: string[]; taskId: string; score: number }[] {
+    // Load all embeddings and compute cosine similarity in JS
+    // Fine for < 10k entries; for larger scale, use a vector DB extension
+    const rows = db
+      .prepare(
+        `SELECT task_id, topic, summary, sources, embedding
+         FROM knowledge WHERE embedding IS NOT NULL`
+      )
+      .all() as {
+      task_id: string;
+      topic: string;
+      summary: string;
+      sources: string;
+      embedding: string;
+    }[];
+
+    const scored = rows
+      .map((r) => {
+        const emb = JSON.parse(r.embedding) as number[];
+        const score = cosineSimilarity(queryEmbedding, emb);
+        return {
+          taskId: r.task_id,
+          topic: r.topic,
+          summary: r.summary,
+          sources: JSON.parse(r.sources) as string[],
+          score,
+        };
+      })
+      .filter((r) => r.score >= threshold)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, limit);
+
+    return scored;
   },
 
   // Task chains

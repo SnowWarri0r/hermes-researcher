@@ -1,6 +1,11 @@
 import { store, db } from "./db.ts";
 import { hermesChat } from "./hermes.ts";
 import { getModelForPhase } from "./settings.ts";
+import {
+  getEmbedding,
+  isEmbeddingConfigured,
+  cosineSimilarity,
+} from "./embedding.ts";
 
 /**
  * After a task completes, extract key findings into the knowledge base.
@@ -125,7 +130,36 @@ async function upsertKnowledge(opts: {
   summary: string;
   sources: string[];
 }): Promise<void> {
-  // Check for existing similar entry via FTS5
+  // Check for existing similar entry — prefer embedding if available
+  const embeddingText = `${opts.topic}: ${opts.summary}`;
+  const embedding = await getEmbedding(embeddingText);
+
+  if (embedding) {
+    const similar = store.searchKnowledgeByVector(embedding, 1, 0.85);
+    if (similar.length > 0) {
+      // Very similar entry exists — merge
+      const merged = similar[0];
+      if (merged.summary.includes(opts.summary.slice(0, 50))) return;
+      const combinedSummary =
+        merged.summary.length + opts.summary.length < 600
+          ? `${merged.summary} ${opts.summary}`
+          : merged.summary;
+      const combinedSources = [...new Set([...merged.sources, ...opts.sources])].slice(0, 10);
+      db.prepare(
+        `UPDATE knowledge SET summary = ?, sources = ? WHERE topic = ? AND task_id = ?`
+      ).run(combinedSummary, JSON.stringify(combinedSources), merged.topic, merged.taskId);
+      const row = db
+        .prepare(`SELECT id FROM knowledge WHERE topic = ? AND task_id = ?`)
+        .get(merged.topic, merged.taskId) as { id: number } | undefined;
+      if (row) {
+        db.prepare(`DELETE FROM knowledge_fts WHERE rowid = ?`).run(row.id);
+        db.prepare(`INSERT INTO knowledge_fts (rowid, topic, summary) VALUES (?, ?, ?)`).run(row.id, merged.topic, combinedSummary);
+      }
+      return;
+    }
+  }
+
+  // Fallback: FTS5-based dedup
   const existing = store.searchKnowledge(opts.topic, 1);
   if (
     existing.length > 0 &&
@@ -162,12 +196,13 @@ async function upsertKnowledge(opts: {
     return;
   }
 
-  // Insert new
+  // Insert new (with embedding if available)
   store.addKnowledge({
     taskId: opts.taskId,
     topic: opts.topic,
     summary: opts.summary,
     sources: opts.sources,
+    embedding: embedding ?? undefined,
     createdAt: Date.now(),
   });
 }
@@ -218,34 +253,42 @@ RL policy optimization
 }
 
 /**
- * Search knowledge base with LLM-expanded queries for better recall.
+ * Search knowledge base — vector search if configured, FTS5 fallback.
  */
 export async function searchPriorKnowledge(goal: string): Promise<string> {
   try {
-    const queries = await expandSearchQuery(goal);
-    const allResults = new Map<
-      string,
-      { topic: string; summary: string; sources: string[]; taskId: string }
-    >();
+    type KnowledgeResult = { topic: string; summary: string; sources: string[]; taskId: string };
+    let entries: KnowledgeResult[] = [];
 
-    for (const q of queries) {
-      const cleaned = q.replace(/[^\w\s\u4e00-\u9fff]/g, " ").trim();
-      if (!cleaned) continue;
-      try {
-        const results = store.searchKnowledge(cleaned, 3);
-        for (const r of results) {
-          if (!allResults.has(r.topic)) {
-            allResults.set(r.topic, r);
-          }
-        }
-      } catch {
-        // FTS5 query might fail on some inputs
+    // Try vector search first
+    if (isEmbeddingConfigured()) {
+      const queryEmb = await getEmbedding(goal);
+      if (queryEmb) {
+        entries = store.searchKnowledgeByVector(queryEmb, 6, 0.35);
       }
     }
 
-    if (allResults.size === 0) return "";
+    // Fallback to LLM-expanded FTS5
+    if (entries.length === 0) {
+      const queries = await expandSearchQuery(goal);
+      const seen = new Map<string, KnowledgeResult>();
 
-    const entries = [...allResults.values()].slice(0, 6);
+      for (const q of queries) {
+        const cleaned = q.replace(/[^\w\s\u4e00-\u9fff]/g, " ").trim();
+        if (!cleaned) continue;
+        try {
+          for (const r of store.searchKnowledge(cleaned, 3)) {
+            if (!seen.has(r.topic)) seen.set(r.topic, r);
+          }
+        } catch {
+          /* FTS5 might fail */
+        }
+      }
+      entries = [...seen.values()].slice(0, 6);
+    }
+
+    if (entries.length === 0) return "";
+
     const block = entries
       .map(
         (r) =>
