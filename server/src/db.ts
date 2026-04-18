@@ -90,6 +90,35 @@ db.exec(`
   );
 
   CREATE INDEX IF NOT EXISTS idx_events_phase ON events(phase_id, seq);
+
+  CREATE TABLE IF NOT EXISTS knowledge (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    task_id     TEXT NOT NULL,
+    topic       TEXT NOT NULL,
+    summary     TEXT NOT NULL,
+    sources     TEXT NOT NULL DEFAULT '[]',
+    created_at  INTEGER NOT NULL,
+    FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_knowledge_topic ON knowledge(topic);
+
+  CREATE VIRTUAL TABLE IF NOT EXISTS knowledge_fts USING fts5(
+    topic, summary, content=knowledge, content_rowid=id
+  );
+
+  CREATE TABLE IF NOT EXISTS task_chains (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    parent_task_id  TEXT NOT NULL,
+    child_task_id   TEXT,
+    goal_template   TEXT NOT NULL,
+    context_mode    TEXT NOT NULL DEFAULT 'result',
+    status          TEXT NOT NULL DEFAULT 'pending',
+    created_at      INTEGER NOT NULL,
+    FOREIGN KEY (parent_task_id) REFERENCES tasks(id) ON DELETE CASCADE
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_chains_parent ON task_chains(parent_task_id);
 `);
 
 // -----------------------------------------------------------------------------
@@ -515,5 +544,88 @@ export const store = {
   getRunningRunIds(): string[] {
     const rows = stmts.selectRunningPhases.all() as { run_id: string }[];
     return rows.map((r) => r.run_id);
+  },
+
+  // Knowledge base
+  addKnowledge(opts: {
+    taskId: string;
+    topic: string;
+    summary: string;
+    sources: string[];
+    createdAt: number;
+  }) {
+    const info = db
+      .prepare(
+        `INSERT INTO knowledge (task_id, topic, summary, sources, created_at) VALUES (?, ?, ?, ?, ?)`
+      )
+      .run(opts.taskId, opts.topic, opts.summary, JSON.stringify(opts.sources), opts.createdAt);
+    // Sync FTS
+    db.prepare(
+      `INSERT INTO knowledge_fts (rowid, topic, summary) VALUES (?, ?, ?)`
+    ).run(info.lastInsertRowid, opts.topic, opts.summary);
+  },
+
+  searchKnowledge(query: string, limit = 5): {
+    topic: string;
+    summary: string;
+    sources: string[];
+    taskId: string;
+  }[] {
+    const rows = db
+      .prepare(
+        `SELECT k.task_id, k.topic, k.summary, k.sources
+         FROM knowledge_fts f
+         JOIN knowledge k ON k.id = f.rowid
+         WHERE knowledge_fts MATCH ?
+         ORDER BY rank
+         LIMIT ?`
+      )
+      .all(query, limit) as {
+      task_id: string;
+      topic: string;
+      summary: string;
+      sources: string;
+    }[];
+    return rows.map((r) => ({
+      taskId: r.task_id,
+      topic: r.topic,
+      summary: r.summary,
+      sources: JSON.parse(r.sources),
+    }));
+  },
+
+  // Task chains
+  addChain(opts: {
+    parentTaskId: string;
+    goalTemplate: string;
+    contextMode: "result" | "summary";
+    createdAt: number;
+  }): number {
+    const info = db
+      .prepare(
+        `INSERT INTO task_chains (parent_task_id, goal_template, context_mode, created_at)
+         VALUES (?, ?, ?, ?)`
+      )
+      .run(opts.parentTaskId, opts.goalTemplate, opts.contextMode, opts.createdAt);
+    return Number(info.lastInsertRowid);
+  },
+
+  getPendingChains(parentTaskId: string): {
+    id: number;
+    goalTemplate: string;
+    contextMode: string;
+  }[] {
+    return db
+      .prepare(
+        `SELECT id, goal_template AS goalTemplate, context_mode AS contextMode
+         FROM task_chains WHERE parent_task_id = ? AND status = 'pending'`
+      )
+      .all(parentTaskId) as { id: number; goalTemplate: string; contextMode: string }[];
+  },
+
+  markChainTriggered(chainId: number, childTaskId: string) {
+    db.prepare(
+      `UPDATE task_chains SET status = 'triggered', child_task_id = ? WHERE id = ?`
+    ).run(childTaskId, chainId);
   },
 };

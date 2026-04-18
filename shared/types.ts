@@ -123,6 +123,41 @@ export interface FollowupRequest {
   message: string;
 }
 
+// ---------------------------------------------------------------------------
+// Model routing config
+// ---------------------------------------------------------------------------
+export interface ModelRouting {
+  plan: string;       // cheap/fast model for planning
+  research: string;   // strong model for research (needs tools)
+  draft: string;      // strong model for writing
+  critique: string;   // cheap model for review
+  revise: string;     // strong model for final output
+}
+
+export const DEFAULT_MODEL_ROUTING: ModelRouting = {
+  plan: "",       // empty = use hermes default
+  research: "",
+  draft: "",
+  critique: "",
+  revise: "",
+};
+
+// ---------------------------------------------------------------------------
+// Task templates
+// ---------------------------------------------------------------------------
+export interface TaskTemplate {
+  id: string;
+  name: string;
+  description: string;
+  goal: string;          // supports {variable} placeholders
+  context: string;
+  toolsets: string[];
+  mode: TaskMode;
+  language: string;
+  variables: string[];   // extracted from goal, e.g. ["topic", "scope"]
+  createdAt: number;
+}
+
 export interface ListTasksResponse {
   tasks: Task[];
   total: number;

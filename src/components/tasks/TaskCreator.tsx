@@ -1,8 +1,8 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useTaskStore } from "../../store/tasks";
 import { ToolsetPicker } from "./ToolsetPicker";
 import { TASK_MODE_META } from "../../types";
-import type { TaskMode } from "../../types";
+import type { TaskMode, TaskTemplate } from "../../types";
 
 const MODES: TaskMode[] = ["quick", "standard", "deep"];
 const LANGUAGES = [
@@ -22,6 +22,7 @@ function storeLanguage(v: string) {
 export function TaskCreator() {
   const dispatch = useTaskStore((s) => s.dispatch);
   const connected = useTaskStore((s) => s.connected);
+  const [templates, setTemplates] = useState<TaskTemplate[]>([]);
   const [goal, setGoal] = useState("");
   const [context, setContext] = useState("");
   const [toolsets, setToolsets] = useState<string[]>([]);
@@ -31,6 +32,13 @@ export function TaskCreator() {
   const [showContext, setShowContext] = useState(false);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetch("/api/templates")
+      .then((r) => r.json())
+      .then(setTemplates)
+      .catch(() => {});
+  }, []);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -57,6 +65,28 @@ export function TaskCreator() {
         <span className="text-emerald-signal text-sm">▶</span>
         <h2 className="text-sm font-semibold text-snow">New Task</h2>
       </div>
+
+      {/* Template quick-pick */}
+      {templates.length > 0 && (
+        <div className="flex gap-1.5 mb-3 flex-wrap">
+          {templates.map((tpl) => (
+            <button
+              key={tpl.id}
+              type="button"
+              onClick={() => {
+                setGoal(tpl.goal);
+                if (tpl.context) { setContext(tpl.context); setShowContext(true); }
+                setMode(tpl.mode);
+                if (tpl.language) setLanguage(tpl.language);
+              }}
+              className="px-2.5 py-1 rounded-md text-[11px] font-medium bg-carbon border border-charcoal text-parchment hover:border-charcoal-light hover:text-snow transition-colors"
+              title={tpl.description || tpl.goal}
+            >
+              {tpl.name}
+            </button>
+          ))}
+        </div>
+      )}
 
       <textarea
         value={goal}

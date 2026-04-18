@@ -18,8 +18,10 @@ export type {
   ListTasksResponse,
   CreateTaskRequest,
   FollowupRequest,
+  ModelRouting,
+  TaskTemplate,
 } from "../../shared/types";
-export { TASK_MODE_META } from "../../shared/types";
+export { TASK_MODE_META, DEFAULT_MODEL_ROUTING } from "../../shared/types";
 
 export const AVAILABLE_TOOLSETS = [
   { id: "terminal", label: "Terminal", icon: ">" },
