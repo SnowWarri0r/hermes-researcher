@@ -82,6 +82,9 @@ Then output the plan as JSON inside a fenced code block with language "json". Sc
 - **Specific**: "What are the latency/throughput benchmarks of vLLM vs TGI on A100?" not "Compare inference frameworks".
 - **Approach must be concrete**: name specific search queries, websites, APIs, or data sources. "Search GitHub issues for memory leak reports" not "investigate issues". Include multiple sources in the approach when cross-source evidence strengthens the answer.
 - **Cover multiple dimensions**: consider what/how/why/comparison/tradeoff/risk angles as appropriate for the goal.
+- **Use concrete dates, never deictic time references.** Search engines cannot resolve "today", "今日", "this week", "recent", "最近". Every time reference must be an explicit date (e.g. "2026-04-16") or date range ("2026-04-14 to 2026-04-16"). Copy the dates from the goal verbatim. This applies to both question titles and approach text.
+    - ❌ Bad: "今日 HN 上最热的 AI 话题" / "What are recent arXiv papers on..."
+    - ✅ Good: "2026-04-16 当天 HN 上最热的 AI 话题" / "arXiv papers published 2026-04-14 to 2026-04-16 on..."
 
 ## Rules for plan structure
 
@@ -114,10 +117,16 @@ ${opts.context ? `\n## Context\n\n${opts.context}\n` : ""}
 
 Approach: ${opts.question.approach}
 
+## Search guidance
+
+- **Use concrete dates in search queries, never deictic time references.** Search engines and APIs cannot resolve "today", "今日", "recent", "this week", "latest". When the question is time-scoped, extract the explicit date(s) from the question/goal and embed them in every search query. For date-ranged sources (arXiv, news, GitHub), use the API's date-filter params rather than hoping the results are sorted.
+- When filtering to a specific day, also check the day before and day after to catch timezone-shifted content.
+
 ## Output rules
 
 - Produce raw **findings**, NOT a polished report section.
 - Concrete facts, data, code examples, statistics. Cite URLs inline.
+- **Timestamp each fact when relevant.** Write "On 2026-04-16, X released Y" not "X recently released Y". Downstream synthesis needs absolute dates.
 - Flag gaps or conflicting sources under "## Unresolved".
 - **300–800 words max.** Be dense, not verbose. Every sentence should carry information.
 - Do NOT repeat the question or goal in your output.`;
