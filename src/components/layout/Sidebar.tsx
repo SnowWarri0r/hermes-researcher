@@ -1,14 +1,7 @@
+import { NavLink } from "react-router";
 import { useTaskStore } from "../../store/tasks";
 
-type View = "tasks" | "knowledge" | "settings";
-
-export function Sidebar({
-  view,
-  onViewChange,
-}: {
-  view: View;
-  onViewChange: (v: View) => void;
-}) {
+export function Sidebar() {
   const { tasks, connected } = useTaskStore();
   const running = tasks.filter((t) => t.status === "running").length;
 
@@ -24,18 +17,17 @@ export function Sidebar({
             Hermes
           </div>
           <div className="text-[11px] text-slate-steel">
-            Subagent Dashboard
+            Researcher
           </div>
         </div>
       </div>
 
       {/* Nav */}
       <nav className="flex-1 py-3 px-3 space-y-1">
-        <SidebarItem
+        <SidebarLink
+          to="/"
           label="Tasks"
-          active={view === "tasks"}
           badge={running > 0 ? running : undefined}
-          onClick={() => onViewChange("tasks")}
           icon={
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
               <path
@@ -47,10 +39,9 @@ export function Sidebar({
             </svg>
           }
         />
-        <SidebarItem
+        <SidebarLink
+          to="/knowledge"
           label="Knowledge"
-          active={view === "knowledge"}
-          onClick={() => onViewChange("knowledge")}
           icon={
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
               <path
@@ -63,10 +54,9 @@ export function Sidebar({
             </svg>
           }
         />
-        <SidebarItem
+        <SidebarLink
+          to="/settings"
           label="Settings"
-          active={view === "settings"}
-          onClick={() => onViewChange("settings")}
           icon={
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
               <circle cx="8" cy="8" r="2" stroke="currentColor" strokeWidth="1.5" />
@@ -96,27 +86,28 @@ export function Sidebar({
   );
 }
 
-function SidebarItem({
+function SidebarLink({
+  to,
   label,
-  active,
   badge,
   icon,
-  onClick,
 }: {
+  to: string;
   label: string;
-  active: boolean;
   badge?: number;
   icon: React.ReactNode;
-  onClick: () => void;
 }) {
   return (
-    <button
-      onClick={onClick}
-      className={`w-full flex items-center gap-3 px-3 py-2 rounded-md text-sm transition-colors ${
-        active
-          ? "bg-emerald-dim text-emerald-signal"
-          : "text-parchment hover:bg-carbon-hover hover:text-snow"
-      }`}
+    <NavLink
+      to={to}
+      end={to === "/"}
+      className={({ isActive }) =>
+        `w-full flex items-center gap-3 px-3 py-2 rounded-md text-sm transition-colors ${
+          isActive
+            ? "bg-emerald-dim text-emerald-signal"
+            : "text-parchment hover:bg-carbon-hover hover:text-snow"
+        }`
+      }
     >
       <span className="shrink-0">{icon}</span>
       <span className="flex-1 text-left">{label}</span>
@@ -125,6 +116,6 @@ function SidebarItem({
           {badge}
         </span>
       )}
-    </button>
+    </NavLink>
   );
 }
