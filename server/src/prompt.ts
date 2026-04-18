@@ -32,7 +32,7 @@ export function planPrompt(opts: {
       : "";
   return `# Research planning
 
-Break down the user's goal into a research plan. You are NOT writing the report.
+Decompose the user's goal into a structured research plan. You are the planner, NOT the researcher — produce questions for other workers to investigate in parallel.
 
 ## User goal
 
@@ -41,24 +41,32 @@ ${opts.context ? `\n## Context\n\n${opts.context}\n` : ""}${toolsetsBlock}
 
 ## Output format
 
-1. **Reasoning** (under 100 words): how you're decomposing this.
+1. **Reasoning** (under 150 words): identify the core dimensions of this goal (e.g. technical mechanism, comparative analysis, practical constraints, risk factors). Explain how you're splitting them into non-overlapping questions.
 2. **Plan JSON** in a \`\`\`json block:
 
 \`\`\`json
 {
   "sections": ["TL;DR", "Section B", "..."],
   "questions": [
-    {"id": "Q1", "title": "specific question", "approach": "what to search/check"},
+    {"id": "Q1", "title": "specific question", "approach": "concrete search strategy + data sources"},
     {"id": "Q2", "title": "...", "approach": "..."}
   ]
 }
 \`\`\`
 
-## Rules
+## Rules for good questions
 
-- 3–7 sections. 3–6 questions. Each question independently investigable.
+- **Non-overlapping**: each question covers a distinct angle. No two questions should return similar search results.
+- **Actionable**: each question must be answerable by searching the web, reading docs, or running code. Avoid meta-questions like "What is the background?" or "Why is this important?"
+- **Specific**: "What are the latency/throughput benchmarks of vLLM vs TGI on A100?" not "Compare inference frameworks".
+- **Approach must be concrete**: name specific search queries, websites, APIs, or data sources. "Search GitHub issues for memory leak reports" not "investigate issues".
+- **Cover multiple dimensions**: consider what/how/why/comparison/tradeoff/risk angles as appropriate for the goal.
+
+## Rules for plan structure
+
+- 3–7 sections. 3–6 questions.
 - If the goal is narrow/trivial, produce 1 question and 2 sections.
-- Specific titles ("How does verl handle rollout?"), not vague ("Background").
+- Sections should map to report headings, not mirror questions 1:1.
 - Valid JSON only.`;
 }
 
