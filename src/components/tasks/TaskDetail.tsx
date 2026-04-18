@@ -330,8 +330,21 @@ export function TaskDetail() {
 }
 
 /**
+ * Convert LaTeX-style \[...\] and \(...\) to $$...$$ and $...$ so
+ * remark-math can pick them up.
+ */
+function normalizeLatexDelimiters(text: string): string {
+  // Block math: \[...\] → $$...$$
+  let s = text.replace(/\\\[([\s\S]*?)\\\]/g, (_, inner) => `$$${inner}$$`);
+  // Inline math: \(...\) → $...$
+  s = s.replace(/\\\(([\s\S]*?)\\\)/g, (_, inner) => `$${inner}$`);
+  return s;
+}
+
+/**
  * Strip trailing incomplete markdown syntax so react-markdown doesn't
  * render raw `**`, `` ` ``, `[`, etc. during streaming.
+ * Leaves $...$ math delimiters alone.
  */
 function sanitizeStreamingMarkdown(text: string): string {
   let s = text;
@@ -343,22 +356,49 @@ function sanitizeStreamingMarkdown(text: string): string {
   }
   // Remove trailing unclosed bold/italic: odd number of ** or * at end
   s = s.replace(/(\*{1,2})(?=[^*]*$)/, (match, stars) => {
-    // Only strip if it looks like an opener without closer
     const before = s.slice(0, s.lastIndexOf(match));
     const opens = (before.match(new RegExp(`\\${stars[0]}{${stars.length}}`, "g")) || []).length;
     return opens % 2 === 0 ? "" : match;
   });
-  // Remove trailing unclosed inline code
-  const backticks = s.match(/`/g);
+  // Remove trailing unclosed inline code backtick (but NOT inside $$...$$)
+  // Count backticks outside of math blocks
+  const withoutMath = s.replace(/\$\$[\s\S]*?\$\$/g, "").replace(/\$[^$]*?\$/g, "");
+  const backticks = withoutMath.match(/`/g);
   if (backticks && backticks.length % 2 !== 0) {
-    s = s.slice(0, s.lastIndexOf("`"));
+    // Find last backtick that's not inside a math block
+    for (let i = s.length - 1; i >= 0; i--) {
+      if (s[i] === "`" && !isInsideMath(s, i)) {
+        s = s.slice(0, i);
+        break;
+      }
+    }
   }
   // Remove trailing unclosed link: `[text` without `](`
+  // But not \[ which is a math delimiter
   const lastBracket = s.lastIndexOf("[");
-  if (lastBracket !== -1 && s.indexOf("](", lastBracket) === -1 && s.indexOf("]", lastBracket + 1) === -1) {
+  if (
+    lastBracket !== -1 &&
+    (lastBracket === 0 || s[lastBracket - 1] !== "\\") &&
+    s.indexOf("](", lastBracket) === -1 &&
+    s.indexOf("]", lastBracket + 1) === -1
+  ) {
     s = s.slice(0, lastBracket);
   }
+  // Remove trailing unclosed $$ block math
+  const doubleDollars = s.match(/\$\$/g);
+  if (doubleDollars && doubleDollars.length % 2 !== 0) {
+    s = s.slice(0, s.lastIndexOf("$$"));
+  }
   return s;
+}
+
+function isInsideMath(text: string, pos: number): boolean {
+  // Quick heuristic: count $ before pos
+  let dollars = 0;
+  for (let i = 0; i < pos; i++) {
+    if (text[i] === "$") dollars++;
+  }
+  return dollars % 2 !== 0;
 }
 
 function ReportView({
@@ -392,7 +432,8 @@ function ReportView({
 
   const rawDisplay = persistedReport || (isLatest ? streamingText : "");
   const isStreaming = isLatest && !persistedReport && streamingText.length > 0;
-  const displayReport = isStreaming ? sanitizeStreamingMarkdown(rawDisplay) : rawDisplay;
+  const sanitized = isStreaming ? sanitizeStreamingMarkdown(rawDisplay) : rawDisplay;
+  const displayReport = normalizeLatexDelimiters(sanitized);
 
   // Auto-scroll to bottom during streaming
   useEffect(() => {
