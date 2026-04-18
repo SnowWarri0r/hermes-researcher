@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { useTaskStore } from "../../store/tasks";
@@ -326,6 +326,38 @@ export function TaskDetail() {
   );
 }
 
+/**
+ * Strip trailing incomplete markdown syntax so react-markdown doesn't
+ * render raw `**`, `` ` ``, `[`, etc. during streaming.
+ */
+function sanitizeStreamingMarkdown(text: string): string {
+  let s = text;
+  // Remove trailing unclosed fenced code block (``` without matching close)
+  const fences = s.match(/```/g);
+  if (fences && fences.length % 2 !== 0) {
+    const lastFence = s.lastIndexOf("```");
+    s = s.slice(0, lastFence);
+  }
+  // Remove trailing unclosed bold/italic: odd number of ** or * at end
+  s = s.replace(/(\*{1,2})(?=[^*]*$)/, (match, stars) => {
+    // Only strip if it looks like an opener without closer
+    const before = s.slice(0, s.lastIndexOf(match));
+    const opens = (before.match(new RegExp(`\\${stars[0]}{${stars.length}}`, "g")) || []).length;
+    return opens % 2 === 0 ? "" : match;
+  });
+  // Remove trailing unclosed inline code
+  const backticks = s.match(/`/g);
+  if (backticks && backticks.length % 2 !== 0) {
+    s = s.slice(0, s.lastIndexOf("`"));
+  }
+  // Remove trailing unclosed link: `[text` without `](`
+  const lastBracket = s.lastIndexOf("[");
+  if (lastBracket !== -1 && s.indexOf("](", lastBracket) === -1 && s.indexOf("]", lastBracket + 1) === -1) {
+    s = s.slice(0, lastBracket);
+  }
+  return s;
+}
+
 function ReportView({
   turn,
   isLatest,
@@ -338,6 +370,8 @@ function ReportView({
   previousReport?: string;
 }) {
   const [showDiff, setShowDiff] = useState(false);
+  const bottomRef = useRef<HTMLDivElement>(null);
+
   const duration = turn.completedAt && turn.createdAt
     ? ((turn.completedAt - turn.createdAt) / 1000).toFixed(1)
     : null;
@@ -346,7 +380,6 @@ function ReportView({
   const draftPhase = turn.phases.find((p) => p.kind === "draft");
   const writePhase = turn.phases.find((p) => p.kind === "write");
 
-  // Show best available: final report > revise output > draft output > streaming text
   const persistedReport =
     turn.report ||
     revisePhase?.output ||
@@ -354,8 +387,16 @@ function ReportView({
     draftPhase?.output ||
     "";
 
-  const displayReport = persistedReport || (isLatest ? streamingText : "");
+  const rawDisplay = persistedReport || (isLatest ? streamingText : "");
   const isStreaming = isLatest && !persistedReport && streamingText.length > 0;
+  const displayReport = isStreaming ? sanitizeStreamingMarkdown(rawDisplay) : rawDisplay;
+
+  // Auto-scroll to bottom during streaming
+  useEffect(() => {
+    if (isStreaming && bottomRef.current) {
+      bottomRef.current.scrollIntoView({ behavior: "smooth", block: "end" });
+    }
+  }, [isStreaming, displayReport]);
 
   return (
     <div>
@@ -386,7 +427,7 @@ function ReportView({
       )}
       {displayReport && (
         <>
-          {previousReport && (
+          {previousReport && !isStreaming && (
             <div className="mb-3 flex items-center gap-2">
               <button
                 onClick={() => setShowDiff((d) => !d)}
@@ -411,6 +452,7 @@ function ReportView({
                 {displayReport}
               </ReactMarkdown>
               {isStreaming && <span className="inline-block w-2 h-4 bg-emerald-signal/60 animate-pulse ml-0.5" />}
+              <div ref={bottomRef} />
             </div>
           )}
         </>
