@@ -194,3 +194,23 @@ export interface Plan {
   sections: string[];
   questions: ResearchQuestion[];
 }
+
+// Thesis phase output (narrative arc) -----------------------------------
+
+export interface ThesisSubClaim {
+  id: string;             // "C1", "C2", ...
+  text: string;           // the sub-claim itself
+  evidence_from: string[]; // Q# IDs like ["Q1", "Q3"]
+}
+
+export interface ThesisSectionPlanEntry {
+  section: string;         // section name, verbatim from plan.sections
+  sub_claim: string | null; // "C1"/"C2"/... or null for TL;DR/closer
+  role: string;            // must include a connective instruction
+}
+
+export interface ParsedThesis {
+  central_claim: string;
+  sub_claims: ThesisSubClaim[];
+  section_plan: ThesisSectionPlanEntry[];
+}
