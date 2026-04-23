@@ -26,6 +26,7 @@ import {
   triggerChains,
 } from "./runner.ts";
 import type { PipelineCache } from "./runner.ts";
+import { parseThesis } from "./prompt.ts";
 import type {
   CreateTaskRequest,
   FollowupRequest,
@@ -203,7 +204,7 @@ app.post("/api/tasks/:id/retry", (c) => {
         cache.draftOutput = phase.output;
         cache.draftUsage = phase.usage;
       } else if (phase.kind === "critique") {
-        // Outline, Plan review, and Self-critique all have kind="critique"; distinguish by label
+        // Outline, Plan review, Thesis, and Self-critique all have kind="critique"; distinguish by label
         if (phase.label.startsWith("Plan review")) {
           cache.planReviewOutput = phase.output;
           cache.planReviewUsage = phase.usage;
@@ -211,6 +212,14 @@ app.post("/api/tasks/:id/retry", (c) => {
           cache.planReviewPassed = !lastTurn.phases.some(
             (p) => p.kind === "plan" && p.branch === 2 && p.label.startsWith("Plan (revised"),
           );
+        } else if (phase.label.startsWith("Thesis")) {
+          cache.thesisOutput = phase.output;
+          cache.thesisUsage = phase.usage;
+          // Re-parse once to populate thesisParsed
+          try {
+            const parsed = parseThesis(phase.output);
+            if (parsed) cache.thesisParsed = parsed;
+          } catch { /* leave undefined */ }
         } else if (phase.label.startsWith("Outline")) {
           cache.outlineOutput = phase.output;
           cache.outlineUsage = phase.usage;
