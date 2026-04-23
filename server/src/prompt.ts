@@ -575,7 +575,13 @@ ${subClaims}
 export function critiquePrompt(opts: {
   goal: string;
   draft: string;
+  thesis?: ParsedThesis | null;
+  outline?: string;
 }): string {
+  const thesisBlock = opts.thesis
+    ? buildNarrativeArcChecklist(opts.thesis, opts.outline)
+    : "";
+
   return `# Critique this report draft
 
 ## Goal it should address
@@ -588,24 +594,51 @@ ${opts.draft}
 
 ## Output
 
-Produce a **concise** critique (300–500 words max). Focus on the top issues only:
+List at most 6 concrete issues. Each under 25 words. Prioritize structural/voice problems over typos.${thesisBlock}
 
-1. **AI voice detection (AI 味)** — does the draft use phrases like "值得关注", "这说明", "核心在于", "本质上", "正在成为", "一方面...另一方面", "某种程度上", "it's worth noting", "fundamentally", "this suggests that"? Does it bold 5+ words per paragraph? Does it end paragraphs with meta-commentary ("这说明X正在Y")? Does it artificially systematize findings into "N dimensions" / "N 个维度"? Flag every instance — this is a top problem.
-2. **Running-account detection (流水账)** — are sections organized "one-source-per-section" instead of by theme? Does the draft just summarize each finding in sequence without synthesis?
-3. **Abstract over concrete** — does the draft say "推进了 agent 工作流的产品化进程" when it could say "发布了 Claude Code Routines 允许模型连续调用 15 个工具"? Flag abstract generalities that hide concrete details.
-4. **Weak thesis** — does the TL;DR state a clear takeaway, or just list what was investigated?
-5. **Missing analysis** — where does the draft restate findings without adding interpretation, cross-source connection, or implications?
-6. **Content gaps** — what important aspects are missing?
-7. **Weak claims** — assertions that lack evidence or overhedge ("may", "could", "some").
-8. **Citations** — missing on specific claims, or suspicious sources.
+## Default checks (apply always)
+1. AI voice: banned phrases present? ("值得关注", "本质上", "it's worth noting", "fundamentally", etc.)
+2. 流水账 / running account: is each section one-source-per-section instead of cross-source synthesis?
+3. Hedging without cause: "may", "might", "某种程度上" without evidence?
+4. Stacked adjectives / bold-word soup?
+5. Claims without numbers: "significant", "popular" where a number should be?
+6. Missing so-what / implications?
+`;
+}
 
-End with a **numbered priority fix list** (top 3–5 changes). For each, specify: which section needs work, what's wrong, and what the revised section should do differently.
+function buildNarrativeArcChecklist(thesis: ParsedThesis, outline?: string): string {
+  const subClaims = thesis.sub_claims.map((sc) => `  - ${sc.id}: ${sc.text}`).join("\n");
+  const outlineSummary = outline ? `\n\n## Outline (reference)\n\n${outline}` : "";
+  return `
 
-Be direct and specific. Don't pad with praise.`;
+## Narrative arc (mandatory checks — thesis is non-null)
+
+**Central claim**: ${thesis.central_claim}
+
+**Sub-claims**:
+${subClaims}${outlineSummary}
+
+**Check list** (flag EACH failure):
+- N1. TL;DR first sentence paraphrases central_claim? (not "This report discusses...")
+- N2. Section headings match plan.sections verbatim (no "Q1:" / "Question 1:")?
+- N3. Each content section's first sentence contains the Connection IN anchor from outline?
+- N4. Each content section's last sentence contains the Connection OUT hook (except final)?
+- N5. Each content section restates or advances its sub_claim at least once?
+- N6. Final section has one explicit "so what" (prediction / action / judgment)?
+
+Report narrative issues as "N1: ...", "N2: ..." so downstream revise can target them.`;
 }
 
 // Slim critique — used with conversation_history that already contains the draft
-export function critiqueInstructionPrompt(opts: { goal: string }): string {
+export function critiqueInstructionPrompt(opts: {
+  goal: string;
+  thesis?: ParsedThesis | null;
+  outline?: string;
+}): string {
+  const thesisBlock = opts.thesis
+    ? buildNarrativeArcChecklist(opts.thesis, opts.outline)
+    : "";
+
   return `# Critique the report I just produced
 
 ## Goal it should address
@@ -614,20 +647,16 @@ ${opts.goal}
 
 ## Output
 
-Produce a **concise** critique (300–500 words max). Focus on the top issues only:
+List at most 6 concrete issues, each under 25 words. Prioritize structural/voice problems over typos.${thesisBlock}
 
-1. **AI voice detection (AI 味)** — does the draft use phrases like "值得关注", "这说明", "核心在于", "本质上", "正在成为", "一方面...另一方面", "某种程度上", "it's worth noting", "fundamentally", "this suggests that"? Does it bold 5+ words per paragraph? Does it end paragraphs with meta-commentary ("这说明X正在Y")? Does it artificially systematize findings into "N dimensions" / "N 个维度"? Flag every instance — this is a top problem.
-2. **Running-account detection (流水账)** — are sections organized "one-source-per-section" instead of by theme? Does the draft just summarize each finding in sequence without synthesis?
-3. **Abstract over concrete** — does the draft say "推进了 agent 工作流的产品化进程" when it could say "发布了 Claude Code Routines 允许模型连续调用 15 个工具"? Flag abstract generalities that hide concrete details.
-4. **Weak thesis** — does the TL;DR state a clear takeaway, or just list what was investigated?
-5. **Missing analysis** — where does the draft restate findings without adding interpretation, cross-source connection, or implications?
-6. **Content gaps** — what important aspects are missing?
-7. **Weak claims** — assertions that lack evidence or overhedge ("may", "could", "some").
-8. **Citations** — missing on specific claims, or suspicious sources.
-
-End with a **numbered priority fix list** (top 3–5 changes). For each, specify: which section needs work, what's wrong, and what the revised section should do differently.
-
-Be direct and specific. Don't pad with praise.`;
+## Default checks (apply always)
+1. AI voice: banned phrases?
+2. 流水账: one-source-per-section?
+3. Hedging without cause?
+4. Stacked adjectives / bold-word soup?
+5. Claims without numbers?
+6. Missing so-what / implications?
+`;
 }
 
 // ---------------------------------------------------------------------------
