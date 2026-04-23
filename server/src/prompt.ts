@@ -1045,7 +1045,7 @@ export function parseThesis(raw: string): ParsedThesis | null {
     try { parsed = JSON.parse(text); } catch {
       try { parsed = JSON.parse(jsonrepair(text)); } catch { continue; }
     }
-    if (!parsed || typeof parsed.central_claim !== "string") continue;
+    if (!parsed || typeof parsed.central_claim !== "string" || parsed.central_claim.trim().length === 0) continue;
     if (!Array.isArray(parsed.sub_claims) || !Array.isArray(parsed.section_plan)) continue;
 
     const sub_claims = (parsed.sub_claims as unknown[])
