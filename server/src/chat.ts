@@ -122,14 +122,16 @@ export async function runChatMessage(opts: {
           event: "chat.delta",
           data: { messageId: assistantMsg.id, delta: event.delta },
         });
-      } else if (event.event === "tool.started" || event.event === "tool.completed") {
-        events.push(event);
-        broadcast(taskId, {
-          event: "chat.tool",
-          data: { messageId: assistantMsg.id, event },
-        });
       } else if (event.event === "run.completed") {
         if (event.usage) usage = event.usage as TokenUsage;
+      } else {
+        // All other events (tool.started, tool.completed, reasoning.available,
+        // reasoning.delta, etc.) flow through as-is so the UI can show progress.
+        events.push(event);
+        broadcast(taskId, {
+          event: "chat.event",
+          data: { messageId: assistantMsg.id, event },
+        });
       }
     }
 

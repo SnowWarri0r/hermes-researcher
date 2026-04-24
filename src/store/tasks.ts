@@ -33,6 +33,7 @@ interface TaskStore {
 
   chatMessages: ChatMessage[];
   streamingChatByMessage: Record<number, string>;
+  streamingChatEventsByMessage: Record<number, import("../types").TaskEvent[]>;
 
   setConnected: (c: boolean) => void;
   setSearch: (q: string) => void;
@@ -73,6 +74,7 @@ export const useTaskStore = create<TaskStore>()((set, get) => ({
   activeUnsub: null,
   chatMessages: [],
   streamingChatByMessage: {},
+  streamingChatEventsByMessage: {},
 
   setConnected(connected) {
     set({ connected });
@@ -167,6 +169,7 @@ export const useTaskStore = create<TaskStore>()((set, get) => ({
       streamingByPhase: {},
       chatMessages: [],
       streamingChatByMessage: {},
+      streamingChatEventsByMessage: {},
       activeUnsub: null,
     });
 
@@ -292,10 +295,25 @@ export const useTaskStore = create<TaskStore>()((set, get) => ({
               if (messageId !== undefined) {
                 set((s) => ({
                   streamingChatByMessage: { ...s.streamingChatByMessage, [messageId]: "" },
+                  streamingChatEventsByMessage: { ...s.streamingChatEventsByMessage, [messageId]: [] },
                 }));
                 apiListChat(id).then((messages) => {
                   if (get().activeTaskId === id) set({ chatMessages: messages });
                 }).catch(() => {});
+              }
+            }
+
+            if (event.event === "chat.event") {
+              const data = event as unknown as Record<string, unknown>;
+              const messageId = typeof data.messageId === "number" ? data.messageId : undefined;
+              const inner = data.event as import("../types").TaskEvent | undefined;
+              if (messageId !== undefined && inner) {
+                set((s) => ({
+                  streamingChatEventsByMessage: {
+                    ...s.streamingChatEventsByMessage,
+                    [messageId]: [...(s.streamingChatEventsByMessage[messageId] || []), inner],
+                  },
+                }));
               }
             }
 
@@ -318,9 +336,11 @@ export const useTaskStore = create<TaskStore>()((set, get) => ({
               const messageId = typeof data.messageId === "number" ? data.messageId : undefined;
               if (messageId !== undefined) {
                 set((s) => {
-                  const next = { ...s.streamingChatByMessage };
-                  delete next[messageId];
-                  return { streamingChatByMessage: next };
+                  const nextStr = { ...s.streamingChatByMessage };
+                  const nextEv = { ...s.streamingChatEventsByMessage };
+                  delete nextStr[messageId];
+                  delete nextEv[messageId];
+                  return { streamingChatByMessage: nextStr, streamingChatEventsByMessage: nextEv };
                 });
               }
               apiListChat(id).then((messages) => {
@@ -352,6 +372,7 @@ export const useTaskStore = create<TaskStore>()((set, get) => ({
       streamingByPhase: {},
       chatMessages: [],
       streamingChatByMessage: {},
+      streamingChatEventsByMessage: {},
       activeUnsub: null,
     });
   },
@@ -372,7 +393,7 @@ export const useTaskStore = create<TaskStore>()((set, get) => ({
     if (!id) return;
     await apiClearChat(id);
     if (get().activeTaskId === id) {
-      set({ chatMessages: [], streamingChatByMessage: {} });
+      set({ chatMessages: [], streamingChatByMessage: {}, streamingChatEventsByMessage: {} });
     }
   },
 
