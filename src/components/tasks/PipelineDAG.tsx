@@ -124,8 +124,8 @@ type LayoutNode = {
   flavor: PhaseKindFlavor;
   status: PhaseStatus;
   duration?: number;
-  col: number;
-  row: number;
+  stage: number;              // vertical stage (top→bottom flow)
+  lane: number;               // horizontal lane within a stage
   x: number;
   y: number;
   w: number;
@@ -141,20 +141,22 @@ type LayoutEdge = {
   highlight: boolean;
 };
 
-// Column width scheme: title column narrower for one-word pipeline phases,
-// wider for research questions.
+// Node width scheme: research questions need more room for the full title;
+// pipeline phases fit in a narrower box.
 function widthFor(flavor: PhaseKindFlavor): number {
-  if (flavor === "research") return 180;
-  if (flavor === "plan-revised" || flavor === "plan-review" || flavor === "re-critique") return 140;
-  return 120;
+  if (flavor === "research") return 170;
+  if (flavor === "plan-revised" || flavor === "plan-review" || flavor === "re-critique") return 150;
+  return 130;
 }
 
 function heightFor(lines: [string, string?]): number {
-  return lines[1] !== undefined ? 52 : 38;
+  return lines[1] !== undefined ? 52 : 40;
 }
 
-const GAP_COL = 54;
-const GAP_ROW = 14;
+// Top-to-bottom flow: stages stack vertically; nodes within a stage spread
+// horizontally across lanes.
+const GAP_STAGE = 36;   // vertical gap between stages
+const GAP_LANE = 14;    // horizontal gap between lanes
 const PAD_X = 16;
 const PAD_Y = 18;
 
@@ -163,6 +165,7 @@ function buildLayout(phases: PhaseDetail[]): {
   edges: LayoutEdge[];
   width: number;
   height: number;
+  busX: number;
 } {
   // ---- Group phases by flavor (filter empty) ----
   const byFlavor = new Map<PhaseKindFlavor, PhaseDetail[]>();
@@ -227,60 +230,54 @@ function buildLayout(phases: PhaseDetail[]): {
     ? Math.max(0, ...Array.from(levelByQid.values()))
     : -1;
 
-  // ---- Assign columns in order ----
-  // col sequence: plan | plan-review | plan-revised | research L0 | research L1 | ... | thesis | outline | draft/write | critique | revise+re-critique interleaved | editor
+  // ---- Assign stages in top-to-bottom order ----
+  // stage sequence (vertical): plan | plan-review | plan-revised |
+  //   research L0 | research L1 | ... | thesis | outline | draft/write |
+  //   critique | revise+re-critique interleaved | editor
   type SlotNode = { phase: PhaseDetail; flavor: PhaseKindFlavor; qid?: string };
-  const cols: SlotNode[][] = [];
+  const stages: SlotNode[][] = [];
 
-  if (planNode) cols.push([{ phase: planNode, flavor: "plan" }]);
-  if (planReviewNode) cols.push([{ phase: planReviewNode, flavor: "plan-review" }]);
-  if (planRevisedNode) cols.push([{ phase: planRevisedNode, flavor: "plan-revised" }]);
+  if (planNode) stages.push([{ phase: planNode, flavor: "plan" }]);
+  if (planReviewNode) stages.push([{ phase: planReviewNode, flavor: "plan-review" }]);
+  if (planRevisedNode) stages.push([{ phase: planRevisedNode, flavor: "plan-revised" }]);
 
   if (researchNodes.length > 0) {
     for (let lvl = 0; lvl <= maxResearchLevel; lvl++) {
-      const col: SlotNode[] = [];
+      const stage: SlotNode[] = [];
       for (const p of researchNodes) {
         const qid = questionIdFromLabel(p.label);
         const pLvl = qid ? levelByQid.get(qid) ?? 0 : 0;
-        if (pLvl === lvl) col.push({ phase: p, flavor: "research", qid: qid ?? undefined });
+        if (pLvl === lvl) stage.push({ phase: p, flavor: "research", qid: qid ?? undefined });
       }
-      if (col.length > 0) cols.push(col);
+      if (stage.length > 0) stages.push(stage);
     }
   }
 
-  if (thesisNode) cols.push([{ phase: thesisNode, flavor: "thesis" }]);
-  if (outlineNode) cols.push([{ phase: outlineNode, flavor: "outline" }]);
-  if (draftNode) cols.push([{ phase: draftNode, flavor: "draft" }]);
-  else if (writeNode) cols.push([{ phase: writeNode, flavor: "write" }]);
+  if (thesisNode) stages.push([{ phase: thesisNode, flavor: "thesis" }]);
+  if (outlineNode) stages.push([{ phase: outlineNode, flavor: "outline" }]);
+  if (draftNode) stages.push([{ phase: draftNode, flavor: "draft" }]);
+  else if (writeNode) stages.push([{ phase: writeNode, flavor: "write" }]);
 
-  // For the critique/revise interleave, order by seq.
-  const interleaved: SlotNode[] = [];
+  // For the critique/revise interleave, order by seq; each gets its own stage.
   const critRev = [
     ...critiqueNodes.map((p): SlotNode => ({ phase: p, flavor: "critique" })),
     ...reCritiqueNodes.map((p): SlotNode => ({ phase: p, flavor: "re-critique" })),
     ...reviseNodes.map((p): SlotNode => ({ phase: p, flavor: "revise" })),
   ].sort((a, b) => a.phase.seq - b.phase.seq);
-  for (const sn of critRev) interleaved.push(sn);
-  for (const sn of interleaved) cols.push([sn]);
+  for (const sn of critRev) stages.push([sn]);
 
-  if (editorNode) cols.push([{ phase: editorNode, flavor: "editor" }]);
+  if (editorNode) stages.push([{ phase: editorNode, flavor: "editor" }]);
 
-  // ---- Resolve widths per column; place nodes ----
-  const colWidths = cols.map((col) => {
-    return Math.max(...col.map((sn) => widthFor(sn.flavor)));
-  });
-
+  // ---- Place nodes: each stage is a horizontal band; lanes spread sideways ----
   const nodes: LayoutNode[] = [];
   const nodeById = new Map<string, LayoutNode>();
-  let cursorX = PAD_X;
-  let maxBottom = 0;
 
-  cols.forEach((col, colIdx) => {
-    const w = colWidths[colIdx];
-    // Pre-compute each node's height by its wrap.
-    const wrapChars = Math.floor((w - 18) / 6.5); // approx chars per 11px
-    const pending: { sn: SlotNode; node: LayoutNode; h: number }[] = [];
-    for (const sn of col) {
+  // First pass: build all node objects with width, lines, height; defer x/y.
+  const pending: { sn: SlotNode; node: LayoutNode; stageIdx: number }[] = [];
+  stages.forEach((stage, stageIdx) => {
+    stage.forEach((sn, laneIdx) => {
+      const w = widthFor(sn.flavor);
+      const wrapChars = Math.floor((w - 18) / 6.5);
       const label = shortLabel(sn.phase, sn.flavor);
       const lines = wrap2(label, wrapChars);
       const h = heightFor(lines);
@@ -290,34 +287,51 @@ function buildLayout(phases: PhaseDetail[]): {
         lines,
         flavor: sn.flavor,
         status: sn.phase.status,
-        duration: sn.phase.completedAt && sn.phase.createdAt ? (sn.phase.completedAt - sn.phase.createdAt) / 1000 : undefined,
-        col: colIdx,
-        row: 0,
-        x: cursorX,
+        duration:
+          sn.phase.completedAt && sn.phase.createdAt
+            ? (sn.phase.completedAt - sn.phase.createdAt) / 1000
+            : undefined,
+        stage: stageIdx,
+        lane: laneIdx,
+        x: 0,
         y: 0,
         w,
         h,
         qid: sn.qid,
       };
-      pending.push({ sn, node, h });
-    }
-    const totalH = pending.reduce((acc, p) => acc + p.h, 0) + Math.max(0, (pending.length - 1) * GAP_ROW);
-    let y = PAD_Y;
-    // Center-align columns with fewer rows relative to the tallest column (pass 2 below).
-    pending.forEach((p, rowIdx) => {
-      p.node.row = rowIdx;
-      p.node.y = y;
-      y += p.h + GAP_ROW;
-      nodes.push(p.node);
-      nodeById.set(p.node.id, p.node);
-      if (y > maxBottom) maxBottom = y;
+      pending.push({ sn, node, stageIdx });
     });
-    void totalH;
-    cursorX += w + GAP_COL;
   });
 
-  const width = cursorX - GAP_COL + PAD_X;
-  let height = maxBottom + PAD_Y;
+  // Compute each stage's horizontal span and overall width.
+  const stageInfo = stages.map((stage) => {
+    const totalW = stage.reduce((acc, sn) => acc + widthFor(sn.flavor), 0) + Math.max(0, (stage.length - 1) * GAP_LANE);
+    return { totalW };
+  });
+  const widestStage = Math.max(0, ...stageInfo.map((s) => s.totalW));
+  const width = widestStage + PAD_X * 2;
+
+  // Place stages top to bottom; center each stage horizontally.
+  let cursorY = PAD_Y;
+  stages.forEach((stage, stageIdx) => {
+    const { totalW } = stageInfo[stageIdx];
+    const startX = PAD_X + (widestStage - totalW) / 2;
+    let cursorX = startX;
+    let rowHeight = 0;
+    for (const sn of stage) {
+      const p = pending.find((x) => x.sn === sn)!;
+      const n = p.node;
+      n.x = cursorX;
+      n.y = cursorY;
+      cursorX += n.w + GAP_LANE;
+      if (n.h > rowHeight) rowHeight = n.h;
+      nodes.push(n);
+      nodeById.set(n.id, n);
+    }
+    cursorY += rowHeight + GAP_STAGE;
+  });
+
+  let height = cursorY - GAP_STAGE + PAD_Y;
 
   // ---- Build edges ----
   const edges: LayoutEdge[] = [];
@@ -415,22 +429,25 @@ function buildLayout(phases: PhaseDetail[]): {
     }
   }
 
-  // If any edge spans >1 column we reserve a "bus lane" at the bottom to
-  // route through without crossing intermediate nodes.
-  const hasCrossCol = edges.some((e) => {
+  // Cross-stage edges (stage diff > 1) route via a vertical "bus lane" on
+  // the right side so they don't slash through intermediate nodes.
+  const hasCrossStage = edges.some((e) => {
     const fn = nodeById.get(e.fromId);
     const tn = nodeById.get(e.toId);
-    return fn && tn && tn.col - fn.col > 1;
+    return fn && tn && tn.stage - fn.stage > 1;
   });
-  if (hasCrossCol) height += 32;
-  // If any loop edge exists we reserve a little arch room at the top.
+  // Loop edges swing left of the node column.
   const hasLoop = edges.some((e) => e.style === "loop");
-  if (hasLoop) {
-    height += 22;
-    for (const n of nodes) n.y += 22;
-  }
 
-  return { nodes, edges, width, height };
+  // Reserve right-side gutter for bus lane; left-side for loop arches.
+  const busX = hasCrossStage ? width + 6 : width;
+  const totalWidth = busX + (hasCrossStage ? 24 : 0);
+  const loopGutter = hasLoop ? 26 : 0;
+  const finalWidth = totalWidth + loopGutter;
+  // Shift every node rightward by loopGutter so loop arches have room on the left.
+  if (loopGutter > 0) for (const n of nodes) n.x += loopGutter;
+
+  return { nodes, edges, width: finalWidth, height, busX: busX + loopGutter };
 }
 
 // ---------------------------------------------------------------------------
@@ -513,34 +530,33 @@ export function PipelineDAG({ phases }: { phases: PhaseDetail[] }) {
             </marker>
           </defs>
 
-          {/* Edges */}
+          {/* Edges — top-to-bottom flow: from bottom of `from` → top of `to` */}
           {l.edges.map((e, i) => {
             const from = nodeById.get(e.fromId);
             const to = nodeById.get(e.toId);
             if (!from || !to) return null;
-            const x1 = from.x + from.w;
-            const y1 = from.y + from.h / 2;
-            const x2 = to.x;
-            const y2 = to.y + to.h / 2;
+            const x1 = from.x + from.w / 2;
+            const y1 = from.y + from.h;
+            const x2 = to.x + to.w / 2;
+            const y2 = to.y;
 
-            const colSpan = to.col - from.col;
+            const stageSpan = to.stage - from.stage;
             let d: string;
 
-            if (colSpan > 1) {
-              // Multi-column edge: route below ALL intermediate nodes so the
-              // line never crosses a node box. Build a manhattan-ish path that
-              // dips down to a shared "bus" lane below the graph.
-              const busY = l.height - 6;
-              d = `M ${x1} ${y1} C ${x1 + 24} ${y1}, ${x1 + 24} ${busY}, ${x1 + 40} ${busY} L ${x2 - 40} ${busY} C ${x2 - 24} ${busY}, ${x2 - 24} ${y2}, ${x2} ${y2}`;
+            if (stageSpan > 1) {
+              // Multi-stage edge: route around the right-side bus lane so we
+              // don't slice through intermediate-stage nodes.
+              const busX = l.busX;
+              d = `M ${x1} ${y1} C ${x1} ${y1 + 18}, ${busX} ${y1 + 18}, ${busX} ${y1 + 36} L ${busX} ${y2 - 36} C ${busX} ${y2 - 18}, ${x2} ${y2 - 18}, ${x2} ${y2}`;
             } else if (e.style === "loop") {
-              // Loop-back (re-critique): arch upward above the row
-              const archY = Math.min(from.y, to.y) - 18;
-              const midX = (x1 + x2) / 2;
-              d = `M ${x1} ${y1} C ${midX} ${archY}, ${midX} ${archY}, ${x2} ${y2}`;
+              // Loop-back (re-critique): arch to the LEFT of the node column
+              const archX = Math.min(from.x, to.x) - 16;
+              const midY = (y1 + y2) / 2;
+              d = `M ${x1} ${y1} C ${archX} ${midY}, ${archX} ${midY}, ${x2} ${y2}`;
             } else {
-              // Normal adjacent-column edge: smooth bezier
-              const dx = Math.max(30, (x2 - x1) * 0.55);
-              d = `M ${x1} ${y1} C ${x1 + dx} ${y1}, ${x2 - dx} ${y2}, ${x2} ${y2}`;
+              // Normal adjacent-stage edge: smooth vertical bezier
+              const dy = Math.max(18, (y2 - y1) * 0.55);
+              d = `M ${x1} ${y1} C ${x1} ${y1 + dy}, ${x2} ${y2 - dy}, ${x2} ${y2}`;
             }
 
             const stroke = e.style === "loop" ? "#ffba0088" : e.highlight ? "#00d99288" : "#2a2d33";
