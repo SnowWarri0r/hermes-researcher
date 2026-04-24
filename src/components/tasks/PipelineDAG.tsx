@@ -1,167 +1,473 @@
 import { useMemo } from "react";
-import type { PhaseDetail, PhaseKind, PhaseStatus } from "../../types";
+import type { PhaseDetail, PhaseStatus } from "../../types";
 
-// Nodes map 1:1 from phases. Special labels (Plan review / Thesis / Outline /
-// Copy edit) live on the critique/revise `kind` — disambiguate by phase.label.
-type NodeKey = {
-  seq: number;
-  branch: number;
-  label: string;
-  kind: PhaseKind;
-  status: PhaseStatus;
-  duration?: number;
+// ---------------------------------------------------------------------------
+// Parse plan.questions (with optional depends_on) out of the plan phase's output.
+// Server side owns the canonical parser; we re-do a lightweight version here so
+// the DAG can reason about real dependencies without widening the API surface.
+// ---------------------------------------------------------------------------
+interface ParsedQuestion {
+  id: string;
+  depends_on: string[];
+}
+
+function parsePlanQuestions(planOutput: string): ParsedQuestion[] {
+  // Match the FIRST fenced JSON block, fall back to raw text parse.
+  const blockRe = /```json\s*([\s\S]*?)```/i;
+  const m = planOutput.match(blockRe);
+  const candidate = (m ? m[1] : planOutput).trim();
+  try {
+    const parsed = JSON.parse(candidate);
+    if (!Array.isArray(parsed.questions)) return [];
+    return parsed.questions
+      .filter((q: unknown) => typeof q === "object" && q !== null && "id" in (q as object))
+      .map((q: { id?: unknown; depends_on?: unknown }) => ({
+        id: typeof q.id === "string" ? q.id : "",
+        depends_on: Array.isArray(q.depends_on)
+          ? q.depends_on.filter((d: unknown): d is string => typeof d === "string")
+          : [],
+      }))
+      .filter((q: ParsedQuestion) => q.id.length > 0);
+  } catch {
+    return [];
+  }
+}
+
+function questionIdFromLabel(label: string): string | null {
+  const m = label.match(/^([QS]\d+):/);
+  return m ? m[1] : null;
+}
+
+// ---------------------------------------------------------------------------
+// Layout: map phases → typed groups → columns → nodes + edges.
+// ---------------------------------------------------------------------------
+
+type PhaseKindFlavor =
+  | "plan"
+  | "plan-review"
+  | "plan-revised"
+  | "research"
+  | "thesis"
+  | "outline"
+  | "draft"
+  | "critique"
+  | "revise"
+  | "re-critique"
+  | "editor"
+  | "write";
+
+function classifyPhase(p: PhaseDetail): PhaseKindFlavor {
+  if (p.kind === "research") return "research";
+  if (p.kind === "draft") return "draft";
+  if (p.kind === "write") return "write";
+  if (p.kind === "plan") {
+    if (p.branch === 2 || p.label.startsWith("Plan (revised")) return "plan-revised";
+    return "plan";
+  }
+  if (p.kind === "critique") {
+    if (p.label.startsWith("Plan review")) return "plan-review";
+    if (p.label.startsWith("Thesis")) return "thesis";
+    if (p.label.startsWith("Outline")) return "outline";
+    if (p.label.startsWith("Re-critique")) return "re-critique";
+    if (p.label.startsWith("Self-critique") || p.label.startsWith("Critique")) return "critique";
+    if (p.label.startsWith("Copy edit")) return "editor";
+    return "critique";
+  }
+  if (p.kind === "revise") {
+    if (p.label.startsWith("Copy edit")) return "editor";
+    return "revise";
+  }
+  return "plan";
+}
+
+const KIND_SHORT: Record<PhaseKindFlavor, string> = {
+  plan: "Plan",
+  "plan-review": "Plan review",
+  "plan-revised": "Plan (revised)",
+  research: "Research",
+  thesis: "Thesis",
+  outline: "Outline",
+  draft: "Draft",
+  critique: "Critique",
+  revise: "Revise",
+  "re-critique": "Re-critique",
+  editor: "Copy edit",
+  write: "Write",
 };
 
-function nodeKeyFromPhase(p: PhaseDetail): NodeKey {
-  const duration =
-    p.completedAt && p.createdAt ? (p.completedAt - p.createdAt) / 1000 : undefined;
-  return {
-    seq: p.seq,
-    branch: p.branch,
-    label: p.label,
-    kind: p.kind,
-    status: p.status,
-    duration,
-  };
-}
-
-// Compact display label — trim long research-question titles.
-function compactLabel(n: NodeKey): string {
-  const l = n.label;
-  // Research: "Q1: <question>" → "Q1 · <truncated>"
-  const m = l.match(/^([QS]\d+):\s*(.+)$/);
-  if (m) {
-    const [, id, rest] = m;
-    const short = rest.length > 22 ? rest.slice(0, 20) + "…" : rest;
-    return `${id} · ${short}`;
+function shortLabel(p: PhaseDetail, flavor: PhaseKindFlavor): string {
+  if (flavor === "research") {
+    // "Q1: title" → keep whole title (we wrap in two lines downstream)
+    return p.label;
   }
-  if (l.length > 26) return l.slice(0, 24) + "…";
-  return l;
+  return KIND_SHORT[flavor] ?? p.label;
 }
 
-const COL_W = 130;
-const COL_GAP = 44;
-const NODE_H = 34;
-const NODE_GAP = 10;
-const PAD_X = 14;
-const PAD_Y = 14;
+// Wrap a string into ≤2 lines, keeping words intact where possible.
+// Returns [line1, line2?]
+function wrap2(text: string, maxChars: number): [string, string?] {
+  if (text.length <= maxChars) return [text];
+  // Prefer to break at a space near maxChars
+  const head = text.slice(0, maxChars);
+  const lastSpace = head.lastIndexOf(" ");
+  const breakAt = lastSpace >= Math.floor(maxChars * 0.6) ? lastSpace : maxChars;
+  const l1 = text.slice(0, breakAt).trim();
+  let l2 = text.slice(breakAt).trim();
+  if (l2.length > maxChars) l2 = l2.slice(0, maxChars - 1) + "…";
+  return [l1, l2];
+}
 
-type LayoutNode = NodeKey & { x: number; y: number; w: number; h: number };
-type LayoutEdge = { from: LayoutNode; to: LayoutNode; highlight?: boolean };
+type LayoutNode = {
+  id: string;                 // stable key: phase.id as string
+  label: string;              // one-line version used for tooltip title
+  lines: [string, string?];   // 1 or 2 display lines
+  flavor: PhaseKindFlavor;
+  status: PhaseStatus;
+  duration?: number;
+  col: number;
+  row: number;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  // For research nodes, keep the question id (Q1/S1/...) for edge mapping
+  qid?: string;
+};
 
-function layout(phases: PhaseDetail[]): { nodes: LayoutNode[]; edges: LayoutEdge[]; width: number; height: number } {
-  // Group by seq.
-  const bySeq = new Map<number, PhaseDetail[]>();
+type LayoutEdge = {
+  fromId: string;
+  toId: string;
+  style: "solid" | "dashed" | "loop";
+  highlight: boolean;
+};
+
+// Column width scheme: title column narrower for one-word pipeline phases,
+// wider for research questions.
+function widthFor(flavor: PhaseKindFlavor): number {
+  if (flavor === "research") return 180;
+  if (flavor === "plan-revised" || flavor === "plan-review" || flavor === "re-critique") return 140;
+  return 120;
+}
+
+function heightFor(lines: [string, string?]): number {
+  return lines[1] !== undefined ? 52 : 38;
+}
+
+const GAP_COL = 54;
+const GAP_ROW = 14;
+const PAD_X = 16;
+const PAD_Y = 18;
+
+function buildLayout(phases: PhaseDetail[]): {
+  nodes: LayoutNode[];
+  edges: LayoutEdge[];
+  width: number;
+  height: number;
+} {
+  // ---- Group phases by flavor (filter empty) ----
+  const byFlavor = new Map<PhaseKindFlavor, PhaseDetail[]>();
   for (const p of phases) {
-    const arr = bySeq.get(p.seq) ?? [];
+    const f = classifyPhase(p);
+    const arr = byFlavor.get(f) ?? [];
     arr.push(p);
-    bySeq.set(p.seq, arr);
+    byFlavor.set(f, arr);
   }
-  const seqs = Array.from(bySeq.keys()).sort((a, b) => a - b);
 
-  const nodesByKey = new Map<string, LayoutNode>();
-  let maxRowHeight = 0;
-  const columnNodes: LayoutNode[][] = [];
+  const planNode = byFlavor.get("plan")?.[0];
+  const planReviewNode = byFlavor.get("plan-review")?.[0];
+  const planRevisedNode = byFlavor.get("plan-revised")?.[0];
+  const researchNodes = (byFlavor.get("research") ?? []).slice().sort((a, b) => a.branch - b.branch);
+  const thesisNode = byFlavor.get("thesis")?.[0];
+  const outlineNode = byFlavor.get("outline")?.[0];
+  const draftNode = byFlavor.get("draft")?.[0];
+  const writeNode = byFlavor.get("write")?.[0];
+  const critiqueNodes = (byFlavor.get("critique") ?? []).slice().sort((a, b) => a.seq - b.seq);
+  const reCritiqueNodes = (byFlavor.get("re-critique") ?? []).slice().sort((a, b) => a.seq - b.seq);
+  const reviseNodes = (byFlavor.get("revise") ?? []).slice().sort((a, b) => a.seq - b.seq);
+  const editorNode = byFlavor.get("editor")?.[0];
 
-  seqs.forEach((seq, colIdx) => {
-    const phasesInSeq = bySeq.get(seq)!.slice().sort((a, b) => a.branch - b.branch);
-    const x = PAD_X + colIdx * (COL_W + COL_GAP);
-    const col: LayoutNode[] = [];
-    phasesInSeq.forEach((p, rowIdx) => {
-      const y = PAD_Y + rowIdx * (NODE_H + NODE_GAP);
-      const n: LayoutNode = { ...nodeKeyFromPhase(p), x, y, w: COL_W, h: NODE_H };
-      col.push(n);
-      nodesByKey.set(`${seq}-${p.branch}-${p.label}`, n);
-      if (y + NODE_H > maxRowHeight) maxRowHeight = y + NODE_H;
-    });
-    columnNodes.push(col);
+  // ---- Parse depends_on from the plan output ----
+  const planOutput = planRevisedNode?.output || planNode?.output || "";
+  const qMeta = parsePlanQuestions(planOutput);
+  const depsById = new Map<string, string[]>();
+  for (const q of qMeta) depsById.set(q.id, q.depends_on);
+
+  // Research sub-levels via topological walk
+  const researchByQid = new Map<string, PhaseDetail>();
+  for (const p of researchNodes) {
+    const qid = questionIdFromLabel(p.label);
+    if (qid) researchByQid.set(qid, p);
+  }
+  // If a research phase lacks metadata, treat as level 0.
+  const qIdsPresent = new Set(researchByQid.keys());
+  const levelByQid = new Map<string, number>();
+  const MAX_LEVELS = 8;
+  // Iteratively assign levels.
+  for (const qid of qIdsPresent) {
+    if (!depsById.has(qid)) levelByQid.set(qid, 0);
+  }
+  for (let iter = 0; iter < MAX_LEVELS; iter++) {
+    let changed = false;
+    for (const qid of qIdsPresent) {
+      if (levelByQid.has(qid)) continue;
+      const deps = (depsById.get(qid) ?? []).filter((d) => qIdsPresent.has(d));
+      if (deps.every((d) => levelByQid.has(d))) {
+        const lvl = deps.length === 0 ? 0 : Math.max(...deps.map((d) => levelByQid.get(d)!)) + 1;
+        levelByQid.set(qid, lvl);
+        changed = true;
+      }
+    }
+    if (!changed) break;
+  }
+  // Anyone still unassigned — cycles or missing deps — dump to level 0.
+  for (const qid of qIdsPresent) {
+    if (!levelByQid.has(qid)) levelByQid.set(qid, 0);
+  }
+  const maxResearchLevel = researchNodes.length > 0
+    ? Math.max(0, ...Array.from(levelByQid.values()))
+    : -1;
+
+  // ---- Assign columns in order ----
+  // col sequence: plan | plan-review | plan-revised | research L0 | research L1 | ... | thesis | outline | draft/write | critique | revise+re-critique interleaved | editor
+  type SlotNode = { phase: PhaseDetail; flavor: PhaseKindFlavor; qid?: string };
+  const cols: SlotNode[][] = [];
+
+  if (planNode) cols.push([{ phase: planNode, flavor: "plan" }]);
+  if (planReviewNode) cols.push([{ phase: planReviewNode, flavor: "plan-review" }]);
+  if (planRevisedNode) cols.push([{ phase: planRevisedNode, flavor: "plan-revised" }]);
+
+  if (researchNodes.length > 0) {
+    for (let lvl = 0; lvl <= maxResearchLevel; lvl++) {
+      const col: SlotNode[] = [];
+      for (const p of researchNodes) {
+        const qid = questionIdFromLabel(p.label);
+        const pLvl = qid ? levelByQid.get(qid) ?? 0 : 0;
+        if (pLvl === lvl) col.push({ phase: p, flavor: "research", qid: qid ?? undefined });
+      }
+      if (col.length > 0) cols.push(col);
+    }
+  }
+
+  if (thesisNode) cols.push([{ phase: thesisNode, flavor: "thesis" }]);
+  if (outlineNode) cols.push([{ phase: outlineNode, flavor: "outline" }]);
+  if (draftNode) cols.push([{ phase: draftNode, flavor: "draft" }]);
+  else if (writeNode) cols.push([{ phase: writeNode, flavor: "write" }]);
+
+  // For the critique/revise interleave, order by seq.
+  const interleaved: SlotNode[] = [];
+  const critRev = [
+    ...critiqueNodes.map((p): SlotNode => ({ phase: p, flavor: "critique" })),
+    ...reCritiqueNodes.map((p): SlotNode => ({ phase: p, flavor: "re-critique" })),
+    ...reviseNodes.map((p): SlotNode => ({ phase: p, flavor: "revise" })),
+  ].sort((a, b) => a.phase.seq - b.phase.seq);
+  for (const sn of critRev) interleaved.push(sn);
+  for (const sn of interleaved) cols.push([sn]);
+
+  if (editorNode) cols.push([{ phase: editorNode, flavor: "editor" }]);
+
+  // ---- Resolve widths per column; place nodes ----
+  const colWidths = cols.map((col) => {
+    return Math.max(...col.map((sn) => widthFor(sn.flavor)));
   });
 
-  // Build edges: every node in col N+1 connects back to every node in col N.
-  // This is approximate — we don't have real edge metadata on each phase.
+  const nodes: LayoutNode[] = [];
+  const nodeById = new Map<string, LayoutNode>();
+  let cursorX = PAD_X;
+  let maxBottom = 0;
+
+  cols.forEach((col, colIdx) => {
+    const w = colWidths[colIdx];
+    // Pre-compute each node's height by its wrap.
+    const wrapChars = Math.floor((w - 18) / 6.5); // approx chars per 11px
+    const pending: { sn: SlotNode; node: LayoutNode; h: number }[] = [];
+    for (const sn of col) {
+      const label = shortLabel(sn.phase, sn.flavor);
+      const lines = wrap2(label, wrapChars);
+      const h = heightFor(lines);
+      const node: LayoutNode = {
+        id: String(sn.phase.id),
+        label,
+        lines,
+        flavor: sn.flavor,
+        status: sn.phase.status,
+        duration: sn.phase.completedAt && sn.phase.createdAt ? (sn.phase.completedAt - sn.phase.createdAt) / 1000 : undefined,
+        col: colIdx,
+        row: 0,
+        x: cursorX,
+        y: 0,
+        w,
+        h,
+        qid: sn.qid,
+      };
+      pending.push({ sn, node, h });
+    }
+    const totalH = pending.reduce((acc, p) => acc + p.h, 0) + Math.max(0, (pending.length - 1) * GAP_ROW);
+    let y = PAD_Y;
+    // Center-align columns with fewer rows relative to the tallest column (pass 2 below).
+    pending.forEach((p, rowIdx) => {
+      p.node.row = rowIdx;
+      p.node.y = y;
+      y += p.h + GAP_ROW;
+      nodes.push(p.node);
+      nodeById.set(p.node.id, p.node);
+      if (y > maxBottom) maxBottom = y;
+    });
+    void totalH;
+    cursorX += w + GAP_COL;
+  });
+
+  const width = cursorX - GAP_COL + PAD_X;
+  const height = maxBottom + PAD_Y;
+
+  // ---- Build edges ----
   const edges: LayoutEdge[] = [];
-  for (let i = 1; i < columnNodes.length; i++) {
-    for (const to of columnNodes[i]) {
-      for (const from of columnNodes[i - 1]) {
-        const highlight = from.status === "completed" && to.status !== "pending";
-        edges.push({ from, to, highlight });
+  const nodeOf = (p: PhaseDetail | undefined): LayoutNode | undefined =>
+    p ? nodeById.get(String(p.id)) : undefined;
+
+  const planN = nodeOf(planNode);
+  const reviewN = nodeOf(planReviewNode);
+  const revisedN = nodeOf(planRevisedNode);
+  const thesisN = nodeOf(thesisNode);
+  const outlineN = nodeOf(outlineNode);
+  const draftN = nodeOf(draftNode) ?? nodeOf(writeNode);
+
+  function pushEdge(from: LayoutNode | undefined, to: LayoutNode | undefined, style: LayoutEdge["style"] = "solid") {
+    if (!from || !to) return;
+    const highlight = from.status === "completed" && to.status !== "pending";
+    edges.push({ fromId: from.id, toId: to.id, style, highlight });
+  }
+
+  // Plan chain
+  pushEdge(planN, reviewN);
+  pushEdge(reviewN, revisedN);
+
+  // Effective plan → level-0 research
+  const effectivePlan = revisedN ?? reviewN ?? planN;
+  const researchLayoutById = new Map<string, LayoutNode>();
+  for (const n of nodes) {
+    if (n.flavor === "research" && n.qid) researchLayoutById.set(n.qid, n);
+  }
+  // Level-0 research from effective plan
+  const l0 = Array.from(researchLayoutById.entries()).filter(([qid]) => (levelByQid.get(qid) ?? 0) === 0);
+  for (const [, n] of l0) pushEdge(effectivePlan, n);
+
+  // Within-research depends_on edges
+  for (const n of nodes) {
+    if (n.flavor !== "research" || !n.qid) continue;
+    const deps = depsById.get(n.qid) ?? [];
+    for (const depQid of deps) {
+      const fromNode = researchLayoutById.get(depQid);
+      if (fromNode) pushEdge(fromNode, n);
+    }
+  }
+
+  // Research → thesis: fan-in from ALL research nodes
+  if (thesisN) {
+    for (const n of nodes) {
+      if (n.flavor === "research") pushEdge(n, thesisN);
+    }
+  } else if (researchNodes.length > 0) {
+    // No thesis (standard without thesis? shouldn't happen post-T9 but defensive)
+    // connect all research to next-col head (likely outline/draft)
+    const nextHead = outlineN ?? draftN;
+    if (nextHead) {
+      for (const n of nodes) {
+        if (n.flavor === "research") pushEdge(n, nextHead);
       }
     }
   }
 
-  const width = PAD_X * 2 + columnNodes.length * COL_W + (columnNodes.length - 1) * COL_GAP;
-  const height = Math.max(maxRowHeight + PAD_Y, 80);
-  return { nodes: Array.from(nodesByKey.values()), edges, width, height };
+  pushEdge(thesisN, outlineN);
+  pushEdge(outlineN, draftN);
+
+  // Critique/revise interleaved chain (seq-ordered)
+  const chain: LayoutNode[] = [];
+  for (const p of critRev) {
+    const n = nodeOf(p.phase);
+    if (n) chain.push(n);
+  }
+  if (draftN && chain[0]) pushEdge(draftN, chain[0]);
+  for (let i = 1; i < chain.length; i++) pushEdge(chain[i - 1], chain[i]);
+
+  // Editor at the end of chain
+  const editorN = nodeOf(editorNode);
+  if (editorN) {
+    const tail = chain[chain.length - 1] ?? draftN;
+    pushEdge(tail, editorN);
+  }
+
+  // Loop-back arrow for revise → re-critique would be redundant since they
+  // form a forward chain by seq. If there's a `re-critique` in the chain,
+  // draw a subtle dashed loop from the previous `revise` back up suggesting
+  // the quality-gate retry. We detect re-critiques and add a `loop` edge.
+  for (let i = 0; i < chain.length; i++) {
+    const n = chain[i];
+    if (n.flavor === "re-critique" && i >= 1) {
+      // The re-critique was triggered by a failed quality gate on the previous revise.
+      edges.push({ fromId: chain[i - 1].id, toId: n.id, style: "loop", highlight: false });
+    }
+  }
+
+  return { nodes, edges, width, height };
 }
 
-function nodeColor(status: PhaseStatus) {
+// ---------------------------------------------------------------------------
+// Rendering helpers
+// ---------------------------------------------------------------------------
+
+function nodeTheme(status: PhaseStatus) {
   switch (status) {
     case "running":
-      return { fill: "rgba(0,217,146,0.14)", stroke: "#00d992", text: "#00d992" };
+      return { fill: "rgba(0,217,146,0.14)", stroke: "#00d992", text: "#00d992", dim: "#00d992" };
     case "completed":
-      return { fill: "rgba(0,217,146,0.06)", stroke: "#00d99266", text: "#f2f2f2" };
+      return { fill: "rgba(0,217,146,0.05)", stroke: "#00d99255", text: "#f2f2f2", dim: "#8b949e" };
     case "failed":
-      return { fill: "rgba(251,86,91,0.1)", stroke: "#fb565b", text: "#fb565b" };
+      return { fill: "rgba(251,86,91,0.08)", stroke: "#fb565b", text: "#fb565b", dim: "#fb565b" };
     case "skipped":
-      return { fill: "transparent", stroke: "#2a2d33", text: "#6f747c" };
+      return { fill: "transparent", stroke: "#2a2d33", text: "#6f747c", dim: "#6f747c" };
     default:
-      return { fill: "#0a0b0d", stroke: "#2a2d33", text: "#8b949e" };
+      return { fill: "#0a0b0d", stroke: "#2a2d33", text: "#8b949e", dim: "#6f747c" };
   }
 }
 
-function statusBadge(status: PhaseStatus): string {
+function statusIcon(status: PhaseStatus): string {
   switch (status) {
-    case "completed":
-      return "✓";
-    case "running":
-      return "●";
-    case "failed":
-      return "✕";
-    case "skipped":
-      return "—";
-    default:
-      return "○";
+    case "completed": return "✓";
+    case "running": return "●";
+    case "failed": return "✕";
+    case "skipped": return "—";
+    default: return "○";
   }
 }
+
+// ---------------------------------------------------------------------------
+// Component
+// ---------------------------------------------------------------------------
 
 export function PipelineDAG({ phases }: { phases: PhaseDetail[] }) {
-  const l = useMemo(() => layout(phases), [phases]);
+  const l = useMemo(() => buildLayout(phases), [phases]);
   const doneCount = phases.filter((p) => p.status === "completed").length;
   const runningCount = phases.filter((p) => p.status === "running").length;
-  const pendingCount = phases.filter(
-    (p) => p.status === "pending" || p.status === "skipped"
-  ).length;
+  const pendingCount = phases.filter((p) => p.status === "pending" || p.status === "skipped").length;
   const failedCount = phases.filter((p) => p.status === "failed").length;
 
   if (phases.length === 0) {
     return (
-      <div className="text-[11px] text-slate-steel italic px-3 py-2">
-        No phases yet
-      </div>
+      <div className="text-[11px] text-slate-steel italic px-3 py-2">No phases yet</div>
     );
   }
+
+  const nodeById = new Map(l.nodes.map((n) => [n.id, n]));
 
   return (
     <div className="bg-carbon border border-charcoal rounded-lg overflow-hidden">
       <div className="flex items-center gap-2 px-3 py-2 border-b border-charcoal-subtle bg-abyss/50">
-        <span className="text-[10px] font-mono text-slate-steel tracking-[0.18em]">
-          PIPELINE · DAG
-        </span>
+        <span className="text-[10px] font-mono text-slate-steel tracking-[0.18em]">PIPELINE · DAG</span>
         <div className="flex-1" />
         <LegendDot color="var(--color-emerald-signal)" label={`${doneCount} done`} />
-        {runningCount > 0 && (
-          <LegendDot
-            color="var(--color-emerald-signal)"
-            glow
-            label={`${runningCount} live`}
-          />
-        )}
-        {pendingCount > 0 && (
-          <LegendDot color="#2a2d33" label={`${pendingCount} pending`} />
-        )}
-        {failedCount > 0 && (
-          <LegendDot color="var(--color-danger)" label={`${failedCount} failed`} />
-        )}
+        {runningCount > 0 && <LegendDot color="var(--color-emerald-signal)" glow label={`${runningCount} live`} />}
+        {pendingCount > 0 && <LegendDot color="#2a2d33" label={`${pendingCount} pending`} />}
+        {failedCount > 0 && <LegendDot color="var(--color-danger)" label={`${failedCount} failed`} />}
       </div>
 
       <div className="overflow-x-auto">
@@ -174,67 +480,59 @@ export function PipelineDAG({ phases }: { phases: PhaseDetail[] }) {
           aria-label="Pipeline DAG"
         >
           <defs>
-            <marker
-              id="dag-arrow-dim"
-              viewBox="0 0 8 8"
-              refX="7"
-              refY="4"
-              markerWidth="5"
-              markerHeight="5"
-              orient="auto"
-            >
+            <marker id="dag-arrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="5" markerHeight="5" orient="auto">
+              <path d="M0,0 L8,4 L0,8 z" fill="#00d99288" />
+            </marker>
+            <marker id="dag-arrow-dim" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="5" markerHeight="5" orient="auto">
               <path d="M0,0 L8,4 L0,8 z" fill="#2a2d33" />
             </marker>
-            <marker
-              id="dag-arrow-accent"
-              viewBox="0 0 8 8"
-              refX="7"
-              refY="4"
-              markerWidth="5"
-              markerHeight="5"
-              orient="auto"
-            >
-              <path d="M0,0 L8,4 L0,8 z" fill="#00d99288" />
+            <marker id="dag-arrow-loop" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="5" markerHeight="5" orient="auto">
+              <path d="M0,0 L8,4 L0,8 z" fill="#ffba0088" />
             </marker>
           </defs>
 
-          {/* Edges drawn first so nodes sit on top */}
+          {/* Edges */}
           {l.edges.map((e, i) => {
-            const x1 = e.from.x + e.from.w;
-            const y1 = e.from.y + e.from.h / 2;
-            const x2 = e.to.x;
-            const y2 = e.to.y + e.to.h / 2;
-            const midX = (x1 + x2) / 2;
-            const d = `M ${x1} ${y1} C ${midX} ${y1}, ${midX} ${y2}, ${x2} ${y2}`;
-            const stroke = e.highlight ? "#00d99266" : "#2a2d33";
-            const marker = e.highlight ? "url(#dag-arrow-accent)" : "url(#dag-arrow-dim)";
+            const from = nodeById.get(e.fromId);
+            const to = nodeById.get(e.toId);
+            if (!from || !to) return null;
+            const x1 = from.x + from.w;
+            const y1 = from.y + from.h / 2;
+            const x2 = to.x;
+            const y2 = to.y + to.h / 2;
+            const dx = Math.max(30, (x2 - x1) * 0.55);
+            const d = `M ${x1} ${y1} C ${x1 + dx} ${y1}, ${x2 - dx} ${y2}, ${x2} ${y2}`;
+            const stroke = e.style === "loop" ? "#ffba0088" : e.highlight ? "#00d99288" : "#2a2d33";
+            const marker = e.style === "loop" ? "url(#dag-arrow-loop)" : e.highlight ? "url(#dag-arrow)" : "url(#dag-arrow-dim)";
+            const dash = e.style === "dashed" || (!e.highlight && e.style !== "loop") ? "3 3" : e.style === "loop" ? "2 3" : undefined;
             return (
               <path
                 key={i}
                 d={d}
                 stroke={stroke}
-                strokeWidth="1"
+                strokeWidth={e.highlight ? 1.25 : 1}
                 fill="none"
                 markerEnd={marker}
-                strokeDasharray={e.from.status === "pending" ? "3 3" : undefined}
+                strokeDasharray={dash}
+                opacity={e.style === "loop" ? 0.6 : 1}
               />
             );
           })}
 
           {/* Nodes */}
-          {l.nodes.map((n, i) => {
-            const c = nodeColor(n.status);
-            const label = compactLabel(n);
+          {l.nodes.map((n) => {
+            const t = nodeTheme(n.status);
             return (
-              <g key={i}>
+              <g key={n.id}>
+                <title>{n.label}</title>
                 <rect
                   x={n.x}
                   y={n.y}
                   width={n.w}
                   height={n.h}
-                  rx="4"
-                  fill={c.fill}
-                  stroke={c.stroke}
+                  rx="5"
+                  fill={t.fill}
+                  stroke={t.stroke}
                   strokeWidth={n.status === "running" ? 1.5 : 1}
                 />
                 {n.status === "running" && (
@@ -243,38 +541,48 @@ export function PipelineDAG({ phases }: { phases: PhaseDetail[] }) {
                     y={n.y}
                     width={n.w}
                     height={n.h}
-                    rx="4"
+                    rx="5"
                     fill="none"
                     stroke="#00d992"
                     strokeWidth="2"
                     opacity="0.25"
                   >
-                    <animate
-                      attributeName="opacity"
-                      values="0.05;0.35;0.05"
-                      dur="1.8s"
-                      repeatCount="indefinite"
-                    />
+                    <animate attributeName="opacity" values="0.05;0.35;0.05" dur="1.8s" repeatCount="indefinite" />
                   </rect>
                 )}
+                {/* Line 1 */}
                 <text
-                  x={n.x + 9}
-                  y={n.y + 14}
+                  x={n.x + 10}
+                  y={n.y + (n.lines[1] ? 16 : 17)}
                   fontSize="11"
-                  fill={c.text}
+                  fill={t.text}
                   fontWeight={n.status === "running" ? 600 : 500}
                 >
-                  {label}
+                  {n.lines[0]}
                 </text>
+                {/* Line 2 */}
+                {n.lines[1] && (
+                  <text
+                    x={n.x + 10}
+                    y={n.y + 30}
+                    fontSize="11"
+                    fill={t.text}
+                    opacity={0.85}
+                  >
+                    {n.lines[1]}
+                  </text>
+                )}
+                {/* Status line */}
                 <text
-                  x={n.x + 9}
-                  y={n.y + 27}
+                  x={n.x + 10}
+                  y={n.y + n.h - 8}
                   fontSize="9"
-                  fill={n.status === "running" ? "#00d992" : "#6f747c"}
+                  fill={t.dim}
                   fontFamily="var(--font-mono)"
                   letterSpacing="0.06em"
                 >
-                  {statusBadge(n.status)}{" "}
+                  {statusIcon(n.status)}
+                  {" "}
                   {n.duration !== undefined
                     ? `${n.duration.toFixed(1)}s`
                     : n.status === "running"
@@ -294,23 +602,12 @@ export function PipelineDAG({ phases }: { phases: PhaseDetail[] }) {
   );
 }
 
-function LegendDot({
-  color,
-  label,
-  glow,
-}: {
-  color: string;
-  label: string;
-  glow?: boolean;
-}) {
+function LegendDot({ color, label, glow }: { color: string; label: string; glow?: boolean }) {
   return (
     <span className="flex items-center gap-1 text-[9px] font-mono text-slate-steel tracking-[0.08em]">
       <span
         className="w-1.5 h-1.5 rounded-full"
-        style={{
-          background: color,
-          boxShadow: glow ? `0 0 6px ${color}` : undefined,
-        }}
+        style={{ background: color, boxShadow: glow ? `0 0 6px ${color}` : undefined }}
       />
       {label.toUpperCase()}
     </span>
