@@ -188,6 +188,9 @@ export interface ResearchQuestion {
   id: string;
   title: string;
   approach: string;
+  /** Optional prerequisite question IDs. Research executor runs this question
+   *  only after its prerequisites complete, and passes their outputs as context. */
+  depends_on?: string[];
 }
 
 export interface Plan {
