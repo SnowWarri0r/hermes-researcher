@@ -572,6 +572,17 @@ function isInsideMath(text: string, pos: number): boolean {
   return dollars % 2 !== 0;
 }
 
+function extractTldr(md: string): { tldr: string | null; rest: string } {
+  // Match `## TL;DR` (case-insensitive, optional punctuation) followed by its body,
+  // stopping before the next `##` or end of doc.
+  const re = /^##\s*TL;?\s*DR\s*\n+([\s\S]*?)(?=\n##\s|$)/mi;
+  const m = md.match(re);
+  if (!m) return { tldr: null, rest: md };
+  const tldr = m[1].trim();
+  const rest = (md.slice(0, m.index ?? 0) + md.slice((m.index ?? 0) + m[0].length)).trim();
+  return { tldr, rest };
+}
+
 function ReportView({
   turn,
   isLatest,
@@ -605,6 +616,16 @@ function ReportView({
   const isStreaming = isLatest && !persistedReport && streamingText.length > 0;
   const sanitized = isStreaming ? sanitizeStreamingMarkdown(rawDisplay) : rawDisplay;
   const displayReport = normalizeLatexDelimiters(sanitized);
+
+  // Pre-extract TL;DR for callout rendering. Skip during streaming to avoid
+  // ripping the TL;DR out mid-way when only the heading has arrived.
+  const { tldr, rest } = !isStreaming && displayReport
+    ? extractTldr(displayReport)
+    : { tldr: null, rest: displayReport };
+
+  // Report stats for the header strip
+  const branchCount = turn.phases.filter((p) => p.kind === "research" && p.status === "completed").length;
+  const sourceCount = (displayReport.match(/\]\(https?:\/\//g) || []).length;
 
   // Auto-scroll to bottom during streaming
   useEffect(() => {
@@ -662,13 +683,35 @@ function ReportView({
           {showDiff && previousReport ? (
             <ReportDiff oldText={previousReport} newText={displayReport} />
           ) : (
-            <div className="prose-hermes">
-              <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex]} components={mdComponents}>
-                {displayReport}
-              </ReactMarkdown>
-              {isStreaming && <span className="inline-block w-2 h-4 bg-emerald-signal/60 animate-pulse ml-0.5" />}
-              <div ref={bottomRef} />
-            </div>
+            <>
+              {/* Stats strip — mono all-caps labels, only when we have data */}
+              {!isStreaming && (sourceCount > 0 || branchCount > 0 || duration) && (
+                <div className="flex items-center gap-3 mb-4 text-[10px] font-mono text-slate-steel tracking-[0.14em]">
+                  {sourceCount > 0 && <span>{sourceCount} SOURCES</span>}
+                  {branchCount > 0 && <><span className="text-slate-steel/40">·</span><span>{branchCount} BRANCHES</span></>}
+                  {duration && <><span className="text-slate-steel/40">·</span><span>{duration}S ELAPSED</span></>}
+                  {turn.seq > 0 && <><span className="text-slate-steel/40">·</span><span className="text-emerald-signal">V{turn.seq + 1}</span></>}
+                </div>
+              )}
+
+              {/* TL;DR callout, rendered standalone above the body */}
+              {tldr && (
+                <div className="mc-tldr">
+                  <div className="mc-tldr-label">TL;DR</div>
+                  <div className="mc-tldr-body">
+                    <ReactMarkdown remarkPlugins={[remarkGfm]} components={mdComponents}>{tldr}</ReactMarkdown>
+                  </div>
+                </div>
+              )}
+
+              <div className="prose-hermes report-body">
+                <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex]} components={mdComponents}>
+                  {rest}
+                </ReactMarkdown>
+                {isStreaming && <span className="mc-caret" />}
+                <div ref={bottomRef} />
+              </div>
+            </>
           )}
         </>
       )}
