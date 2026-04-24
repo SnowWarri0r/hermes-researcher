@@ -1,18 +1,8 @@
 import { useMemo } from "react";
 import type { PhaseDetail, PhaseKind, PhaseStatus } from "../../types";
 
-const PHASE_LABEL: Record<PhaseKind, string> = {
-  plan: "Plan",
-  research: "Research",
-  draft: "Draft",
-  critique: "Critique",
-  revise: "Revise",
-  write: "Write",
-};
-
-// Distinct nodes in our pipeline (ordered). Research fans out; others are 1-wide.
-// Special labels (Plan review / Thesis / Outline / Copy edit) live on the
-// critique/revise `kind` — we disambiguate by phase.label.
+// Nodes map 1:1 from phases. Special labels (Plan review / Thesis / Outline /
+// Copy edit) live on the critique/revise `kind` — disambiguate by phase.label.
 type NodeKey = {
   seq: number;
   branch: number;
