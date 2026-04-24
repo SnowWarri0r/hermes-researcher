@@ -281,6 +281,49 @@ app.delete("/api/tasks/:id", (c) => {
 });
 
 // ---------------------------------------------------------------------------
+// Chat (post-report Q&A, tool-enabled)
+// ---------------------------------------------------------------------------
+app.get("/api/tasks/:id/chat", (c) => {
+  const id = c.req.param("id");
+  if (!store.getTask(id)) return c.json({ error: "not found" }, 404);
+  return c.json({ messages: store.listChatMessages(id) });
+});
+
+app.post("/api/tasks/:id/chat", async (c) => {
+  const id = c.req.param("id");
+  const task = store.getTask(id);
+  if (!task) return c.json({ error: "not found" }, 404);
+
+  const body = (await c.req.json()) as { message?: string };
+  const message = body.message?.trim();
+  if (!message) return c.json({ error: "message is required" }, 400);
+
+  const userMsg = store.addChatMessage({
+    taskId: id,
+    turnId: null,
+    role: "user",
+    content: message,
+    status: "completed",
+    createdAt: Date.now(),
+  });
+
+  import("./chat.ts").then(({ runChatMessage }) => {
+    runChatMessage({ taskId: id, userMessage: userMsg }).catch(() => {
+      /* error already persisted */
+    });
+  });
+
+  return c.json(userMsg, 201);
+});
+
+app.delete("/api/tasks/:id/chat", (c) => {
+  const id = c.req.param("id");
+  if (!store.getTask(id)) return c.json({ error: "not found" }, 404);
+  store.deleteChatThread(id);
+  return c.json({ ok: true });
+});
+
+// ---------------------------------------------------------------------------
 // Settings: model routing
 // ---------------------------------------------------------------------------
 app.get("/api/settings", (c) => {

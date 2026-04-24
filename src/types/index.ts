@@ -23,6 +23,8 @@ export type {
   EmbeddingProvider,
   TaskTemplate,
   TemplateVariable,
+  ChatMessage,
+  ChatRole,
 } from "../../shared/types";
 export { TASK_MODE_META, DEFAULT_MODEL_ROUTING } from "../../shared/types";
 

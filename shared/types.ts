@@ -217,3 +217,21 @@ export interface ParsedThesis {
   sub_claims: ThesisSubClaim[];
   section_plan: ThesisSectionPlanEntry[];
 }
+
+// Post-report chat (read-enabled + tool-enabled Q&A) -----------------------
+
+export type ChatRole = "user" | "assistant";
+
+export interface ChatMessage {
+  id: number;
+  taskId: string;
+  turnId: number | null;
+  role: ChatRole;
+  content: string;
+  events?: TaskEvent[];
+  usage?: TokenUsage;
+  status: "running" | "completed" | "failed";
+  error?: string;
+  createdAt: number;
+  completedAt?: number;
+}

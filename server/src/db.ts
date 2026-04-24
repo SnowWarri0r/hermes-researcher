@@ -17,6 +17,9 @@ import type {
   PhaseKind,
   PhaseStatus,
   PipelineProgress,
+  ChatMessage,
+  ChatRole,
+  TokenUsage,
 } from "../../shared/types.ts";
 import { getEmbeddingDimensions } from "./embedding.ts";
 
@@ -154,6 +157,23 @@ db.exec(`
   );
 
   CREATE INDEX IF NOT EXISTS idx_chains_parent ON task_chains(parent_task_id);
+
+  CREATE TABLE IF NOT EXISTS chat_messages (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    task_id      TEXT NOT NULL,
+    turn_id      INTEGER,
+    role         TEXT NOT NULL,
+    content      TEXT NOT NULL DEFAULT '',
+    events       TEXT,
+    usage        TEXT,
+    status       TEXT NOT NULL DEFAULT 'completed',
+    error        TEXT,
+    created_at   INTEGER NOT NULL,
+    completed_at INTEGER,
+    FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_chat_task ON chat_messages(task_id, created_at);
 `);
 
 // Additive: add mode column to task_chains if missing (no migrations framework)
@@ -774,4 +794,91 @@ export const store = {
   deleteChain(chainId: number) {
     db.prepare(`DELETE FROM task_chains WHERE id = ?`).run(chainId);
   },
+
+  // Chat messages ----------------------------------------------------------
+
+  addChatMessage(opts: {
+    taskId: string;
+    turnId: number | null;
+    role: ChatRole;
+    content: string;
+    status?: "running" | "completed" | "failed";
+    createdAt: number;
+  }): ChatMessage {
+    const info = db
+      .prepare(
+        `INSERT INTO chat_messages (task_id, turn_id, role, content, status, created_at)
+         VALUES (?, ?, ?, ?, ?, ?)`
+      )
+      .run(
+        opts.taskId,
+        opts.turnId,
+        opts.role,
+        opts.content,
+        opts.status ?? "completed",
+        opts.createdAt
+      );
+    return this.getChatMessage(Number(info.lastInsertRowid))!;
+  },
+
+  getChatMessage(id: number): ChatMessage | null {
+    const row = db
+      .prepare(`SELECT * FROM chat_messages WHERE id = ?`)
+      .get(id) as Record<string, unknown> | undefined;
+    if (!row) return null;
+    return rowToChatMessage(row);
+  },
+
+  listChatMessages(taskId: string): ChatMessage[] {
+    const rows = db
+      .prepare(
+        `SELECT * FROM chat_messages WHERE task_id = ? ORDER BY created_at ASC, id ASC`
+      )
+      .all(taskId) as Record<string, unknown>[];
+    return rows.map(rowToChatMessage);
+  },
+
+  completeChatMessage(opts: {
+    id: number;
+    content: string;
+    events?: TaskEvent[];
+    usage?: TokenUsage;
+    status: "completed" | "failed";
+    error?: string;
+    completedAt: number;
+  }) {
+    db.prepare(
+      `UPDATE chat_messages
+       SET content = ?, events = ?, usage = ?, status = ?, error = ?, completed_at = ?
+       WHERE id = ?`
+    ).run(
+      opts.content,
+      opts.events ? JSON.stringify(opts.events) : null,
+      opts.usage ? JSON.stringify(opts.usage) : null,
+      opts.status,
+      opts.error ?? null,
+      opts.completedAt,
+      opts.id
+    );
+  },
+
+  deleteChatThread(taskId: string) {
+    db.prepare(`DELETE FROM chat_messages WHERE task_id = ?`).run(taskId);
+  },
 };
+
+function rowToChatMessage(r: Record<string, unknown>): ChatMessage {
+  return {
+    id: Number(r.id),
+    taskId: String(r.task_id),
+    turnId: r.turn_id !== null && r.turn_id !== undefined ? Number(r.turn_id) : null,
+    role: r.role as ChatRole,
+    content: String(r.content ?? ""),
+    events: r.events ? (JSON.parse(String(r.events)) as TaskEvent[]) : undefined,
+    usage: r.usage ? (JSON.parse(String(r.usage)) as TokenUsage) : undefined,
+    status: (r.status as ChatMessage["status"]) ?? "completed",
+    error: r.error ? String(r.error) : undefined,
+    createdAt: Number(r.created_at),
+    completedAt: r.completed_at !== null && r.completed_at !== undefined ? Number(r.completed_at) : undefined,
+  };
+}

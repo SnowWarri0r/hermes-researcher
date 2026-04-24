@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { Task, TaskDetail, TaskMode } from "../types";
+import type { Task, TaskDetail, TaskMode, ChatMessage } from "../types";
 import {
   createTask as apiCreate,
   deleteTask as apiDelete,
@@ -10,6 +10,9 @@ import {
   subscribeToTask,
   cancelTask as apiCancel,
   patchTask as apiPatch,
+  listChatMessages as apiListChat,
+  sendChatMessage as apiSendChat,
+  clearChatThread as apiClearChat,
 } from "../api/client";
 import { sendNotification } from "../hooks/useNotification";
 
@@ -27,6 +30,9 @@ interface TaskStore {
   streamingPhaseKind: string;
   streamingByPhase: Record<number, string>;
   activeUnsub: (() => void) | null;
+
+  chatMessages: ChatMessage[];
+  streamingChatByMessage: Record<number, string>;
 
   setConnected: (c: boolean) => void;
   setSearch: (q: string) => void;
@@ -46,6 +52,9 @@ interface TaskStore {
   closeTask: () => void;
   removeTask: (id: string) => Promise<void>;
   clearCompleted: () => Promise<void>;
+
+  sendChat: (message: string) => Promise<void>;
+  clearChat: () => Promise<void>;
 }
 
 export const useTaskStore = create<TaskStore>()((set, get) => ({
@@ -62,6 +71,8 @@ export const useTaskStore = create<TaskStore>()((set, get) => ({
   streamingPhaseKind: "",
   streamingByPhase: {},
   activeUnsub: null,
+  chatMessages: [],
+  streamingChatByMessage: {},
 
   setConnected(connected) {
     set({ connected });
@@ -154,6 +165,8 @@ export const useTaskStore = create<TaskStore>()((set, get) => ({
       streamingText: "",
       streamingPhaseKind: "",
       streamingByPhase: {},
+      chatMessages: [],
+      streamingChatByMessage: {},
       activeUnsub: null,
     });
 
@@ -162,33 +175,39 @@ export const useTaskStore = create<TaskStore>()((set, get) => ({
       if (get().activeTaskId !== id) return;
       set({ activeTaskDetail: detail });
 
-      // If running, subscribe to SSE for live updates
-      if (detail.status === "running") {
-        // Infer current phase kind from detail so streaming works immediately.
-        // Also seed streamingByPhase and streamingText from the buffer the
-        // server merged into running phases' output (so mid-stream opens see
-        // prior content).
-        const latestTurn = detail.turns[detail.turns.length - 1];
-        if (latestTurn) {
-          const seedByPhase: Record<number, string> = {};
-          let seedMainText = "";
-          const reportPhases = ["write", "draft", "revise"];
+      // Load chat thread (if any) — doesn't block rendering
+      apiListChat(id)
+        .then((messages) => {
+          if (get().activeTaskId === id) set({ chatMessages: messages });
+        })
+        .catch(() => { /* ignore */ });
 
-          for (const phase of latestTurn.phases) {
-            if (phase.status === "running" && phase.output) {
-              seedByPhase[phase.id] = phase.output;
-              if (reportPhases.includes(phase.kind)) {
-                seedMainText = phase.output;
+      // Always subscribe to SSE — needed for chat events even on completed tasks
+      {
+        // Seed pipeline streaming state ONLY if the task is running.
+        if (detail.status === "running") {
+          const latestTurn = detail.turns[detail.turns.length - 1];
+          if (latestTurn) {
+            const seedByPhase: Record<number, string> = {};
+            let seedMainText = "";
+            const reportPhases = ["write", "draft", "revise"];
+
+            for (const phase of latestTurn.phases) {
+              if (phase.status === "running" && phase.output) {
+                seedByPhase[phase.id] = phase.output;
+                if (reportPhases.includes(phase.kind)) {
+                  seedMainText = phase.output;
+                }
               }
             }
-          }
 
-          const runningPhase = latestTurn.phases.find((p) => p.status === "running");
-          set({
-            streamingPhaseKind: runningPhase?.kind ?? "",
-            streamingByPhase: seedByPhase,
-            streamingText: seedMainText,
-          });
+            const runningPhase = latestTurn.phases.find((p) => p.status === "running");
+            set({
+              streamingPhaseKind: runningPhase?.kind ?? "",
+              streamingByPhase: seedByPhase,
+              streamingText: seedMainText,
+            });
+          }
         }
 
         const unsub = subscribeToTask(
@@ -265,6 +284,49 @@ export const useTaskStore = create<TaskStore>()((set, get) => ({
               get().refreshList();
               sendNotification("Task failed", "A research task encountered an error");
             }
+
+            // Chat events
+            if (event.event === "chat.message.started") {
+              const data = event as unknown as Record<string, unknown>;
+              const messageId = typeof data.messageId === "number" ? data.messageId : undefined;
+              if (messageId !== undefined) {
+                set((s) => ({
+                  streamingChatByMessage: { ...s.streamingChatByMessage, [messageId]: "" },
+                }));
+                apiListChat(id).then((messages) => {
+                  if (get().activeTaskId === id) set({ chatMessages: messages });
+                }).catch(() => {});
+              }
+            }
+
+            if (event.event === "chat.delta") {
+              const data = event as unknown as Record<string, unknown>;
+              const messageId = typeof data.messageId === "number" ? data.messageId : undefined;
+              const delta = typeof data.delta === "string" ? data.delta : "";
+              if (messageId !== undefined && delta) {
+                set((s) => ({
+                  streamingChatByMessage: {
+                    ...s.streamingChatByMessage,
+                    [messageId]: (s.streamingChatByMessage[messageId] || "") + delta,
+                  },
+                }));
+              }
+            }
+
+            if (event.event === "chat.message.completed" || event.event === "chat.message.failed") {
+              const data = event as unknown as Record<string, unknown>;
+              const messageId = typeof data.messageId === "number" ? data.messageId : undefined;
+              if (messageId !== undefined) {
+                set((s) => {
+                  const next = { ...s.streamingChatByMessage };
+                  delete next[messageId];
+                  return { streamingChatByMessage: next };
+                });
+              }
+              apiListChat(id).then((messages) => {
+                if (get().activeTaskId === id) set({ chatMessages: messages });
+              }).catch(() => {});
+            }
           },
           () => {},
           () => {}
@@ -288,8 +350,30 @@ export const useTaskStore = create<TaskStore>()((set, get) => ({
       streamingText: "",
       streamingPhaseKind: "",
       streamingByPhase: {},
+      chatMessages: [],
+      streamingChatByMessage: {},
       activeUnsub: null,
     });
+  },
+
+  async sendChat(message) {
+    const id = get().activeTaskId;
+    if (!id) return;
+    const trimmed = message.trim();
+    if (!trimmed) return;
+    const userMsg = await apiSendChat(id, trimmed);
+    if (get().activeTaskId === id) {
+      set((s) => ({ chatMessages: [...s.chatMessages, userMsg] }));
+    }
+  },
+
+  async clearChat() {
+    const id = get().activeTaskId;
+    if (!id) return;
+    await apiClearChat(id);
+    if (get().activeTaskId === id) {
+      set({ chatMessages: [], streamingChatByMessage: {} });
+    }
   },
 
   async removeTask(id) {

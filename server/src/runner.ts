@@ -70,7 +70,7 @@ export function subscribe(taskId: string, fn: Subscriber): () => void {
   };
 }
 
-function broadcast(taskId: string, event: PipelineEvent) {
+export function broadcast(taskId: string, event: PipelineEvent) {
   const set = subscribers.get(taskId);
   if (!set) return;
   for (const fn of set) {
