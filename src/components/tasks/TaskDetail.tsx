@@ -574,7 +574,14 @@ function normalizeLatexDelimiters(text: string): string {
   let s = text.replace(/\\\[([\s\S]*?)\\\]/g, (_, inner) => `$$${inner}$$`);
   // Inline math: \(...\) → $...$
   s = s.replace(/\\\(([\s\S]*?)\\\)/g, (_, inner) => `$${inner}$`);
+  // Escape currency $ (e.g. US$2,499, A$500) so remark-math doesn't pair
+  // them as inline math. A `$` preceded by a letter is always currency.
+  s = s.replace(/([A-Za-z])\$(?=\d)/g, "$1\\$");
   return s;
+}
+
+export function escapeCurrencyDollars(text: string): string {
+  return text.replace(/([A-Za-z])\$(?=\d)/g, "$1\\$");
 }
 
 /**
