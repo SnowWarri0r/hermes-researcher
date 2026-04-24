@@ -3,8 +3,8 @@ import { useMemo } from "react";
 import { useTaskStore } from "../../store/tasks";
 
 export function Sidebar() {
-  const { tasks, connected } = useTaskStore();
-  const running = tasks.filter((t) => t.status === "running").length;
+  const { tasks, connected, counts } = useTaskStore();
+  const running = counts.running;
 
   const todayTokens = useMemo(() => {
     const now = new Date();

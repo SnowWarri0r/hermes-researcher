@@ -19,6 +19,9 @@ import { sendNotification } from "../hooks/useNotification";
 interface TaskStore {
   tasks: Task[];
   total: number;
+  /** Unfiltered status counts so sidebar badge + filter pills stay
+   *  correct regardless of the active status filter. */
+  counts: { running: number; completed: number; failed: number; all: number };
   loading: boolean;
   connected: boolean;
   searchQuery: string;
@@ -61,6 +64,7 @@ interface TaskStore {
 export const useTaskStore = create<TaskStore>()((set, get) => ({
   tasks: [],
   total: 0,
+  counts: { running: 0, completed: 0, failed: 0, all: 0 },
   loading: false,
   connected: false,
   searchQuery: "",
@@ -94,12 +98,17 @@ export const useTaskStore = create<TaskStore>()((set, get) => ({
     set({ loading: true });
     try {
       const { searchQuery, filterStatus } = get();
-      const { tasks, total } = await apiList({
+      const resp = await apiList({
         limit: 100,
         q: searchQuery || undefined,
         status: filterStatus || undefined,
       });
-      set({ tasks, total, loading: false });
+      set({
+        tasks: resp.tasks,
+        total: resp.total,
+        counts: resp.counts ?? { running: 0, completed: 0, failed: 0, all: resp.total },
+        loading: false,
+      });
     } catch {
       set({ loading: false });
     }

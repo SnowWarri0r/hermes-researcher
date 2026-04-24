@@ -180,6 +180,9 @@ export interface TaskTemplate {
 export interface ListTasksResponse {
   tasks: Task[];
   total: number;
+  /** Unfiltered counts across the full set — independent of the current
+   *  `status` filter so UI controls can show correct badges. */
+  counts: { running: number; completed: number; failed: number; all: number };
 }
 
 // Pipeline contract ---------------------------------------------------------

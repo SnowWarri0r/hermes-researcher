@@ -322,8 +322,14 @@ const stmts = {
   listTasks: db.prepare(
     `SELECT * FROM tasks ORDER BY pinned DESC, created_at DESC LIMIT ? OFFSET ?`
   ),
+  listAllTasks: db.prepare(
+    `SELECT * FROM tasks ORDER BY pinned DESC, created_at DESC`
+  ),
   searchTasks: db.prepare(
     `SELECT * FROM tasks WHERE goal LIKE ? ORDER BY pinned DESC, created_at DESC LIMIT ? OFFSET ?`
+  ),
+  searchAllTasks: db.prepare(
+    `SELECT * FROM tasks WHERE goal LIKE ? ORDER BY pinned DESC, created_at DESC`
   ),
   countSearchTasks: db.prepare(
     `SELECT COUNT(*) AS c FROM tasks WHERE goal LIKE ?`
@@ -544,39 +550,46 @@ export const store = {
   listTasks(opts: { limit: number; offset: number; q?: string; status?: string }): {
     tasks: Task[];
     total: number;
+    counts: { running: number; completed: number; failed: number; all: number };
   } {
+    // Status is derived from each task's latest turn — not a column on the
+    // tasks table — so paginating at SQL level then post-filtering breaks
+    // both pagination and counts. Load the full set that matches the text
+    // query, compose each with its latest turn, then filter + paginate
+    // in memory. With typical single-user volumes (N ≲ few hundred) this
+    // is cheap and avoids a SQL JOIN across tasks + turns.
     let taskRows: TaskRow[];
-    let total: number;
-
     if (opts.q) {
       const pattern = `%${opts.q}%`;
-      taskRows = stmts.searchTasks.all(pattern, opts.limit, opts.offset) as TaskRow[];
-      total = (stmts.countSearchTasks.get(pattern) as { c: number }).c;
+      taskRows = stmts.searchAllTasks.all(pattern) as TaskRow[];
     } else {
-      taskRows = stmts.listTasks.all(opts.limit, opts.offset) as TaskRow[];
-      total = (stmts.countTasks.get() as { c: number }).c;
+      taskRows = stmts.listAllTasks.all() as TaskRow[];
     }
 
-    const rows = taskRows;
-    const tasks = rows.map((r) => {
+    const composed = taskRows.map((r) => {
       const latestRow = stmts.selectLatestTurn.get(r.id) as TurnRow | undefined;
       const count = (stmts.countTurns.get(r.id) as { c: number }).c;
       let latest: Turn | undefined;
       if (latestRow) {
-        const phaseRows = stmts.selectPhasesForTurn.all(
-          latestRow.id
-        ) as PhaseRow[];
+        const phaseRows = stmts.selectPhasesForTurn.all(latestRow.id) as PhaseRow[];
         latest = rowToTurn(latestRow, phaseRows.length);
       }
       return composeTask(r, latest, count);
     });
-    // Post-filter by status if requested (status is derived, not in tasks table)
-    if (opts.status) {
-      const filtered = tasks.filter((t) => t.status === opts.status);
-      return { tasks: filtered, total: filtered.length };
-    }
 
-    return { tasks, total };
+    const counts = {
+      all: composed.length,
+      running: composed.filter((t) => t.status === "running").length,
+      completed: composed.filter((t) => t.status === "completed").length,
+      failed: composed.filter((t) => t.status === "failed").length,
+    };
+
+    const filtered = opts.status
+      ? composed.filter((t) => t.status === opts.status)
+      : composed;
+    const paged = filtered.slice(opts.offset, opts.offset + opts.limit);
+
+    return { tasks: paged, total: filtered.length, counts };
   },
 
   getPhaseByRunId(runId: string): Phase | null {
