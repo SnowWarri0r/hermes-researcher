@@ -9,6 +9,8 @@ import { StatusBadge } from "../common/Badge";
 import { Tooltip } from "../common/Tooltip";
 import { UsageTooltip } from "../common/UsageTooltip";
 import { PipelineView } from "./PipelineView";
+import { PipelineDAG } from "./PipelineDAG";
+import { EventLogTail } from "./EventLogTail";
 import { ReportDiff } from "./ReportDiff";
 import { ReportChat } from "./ReportChat";
 import type { TurnDetail } from "../../types";
@@ -199,23 +201,44 @@ export function TaskDetail() {
       <div className="fixed top-0 right-0 bottom-0 w-[min(1100px,92vw)] bg-abyss border-l border-charcoal z-50 flex flex-col animate-slide-in">
         {/* Header */}
         <div className="px-6 py-4 border-b border-charcoal shrink-0">
+          {/* Breadcrumb strip */}
+          <div className="flex items-center gap-2 mb-2 text-[10px] font-mono tracking-[0.18em] text-slate-steel">
+            <span>TASKS</span>
+            <span className="text-slate-steel/40">/</span>
+            <span className="text-parchment">#{activeTaskId?.slice(5, 13)}</span>
+            <span className="text-slate-steel/40">/</span>
+            <span
+              className={
+                task.status === "running"
+                  ? "text-emerald-signal"
+                  : task.status === "failed"
+                  ? "text-danger"
+                  : "text-slate-steel"
+              }
+            >
+              {task.status === "running" ? "● RUNNING" : task.status === "failed" ? "✕ FAILED" : "✓ DONE"}
+            </span>
+            <div className="flex-1" />
+            <span className="text-slate-steel/60">{new Date(task.createdAt).toLocaleString()}</span>
+          </div>
+
           <div className="flex items-center justify-between gap-3 mb-3">
-            <div className="flex items-center gap-3 flex-wrap min-w-0">
-              <StatusBadge status={task.status} />
-              {task.turnCount > 1 && (
-                <span className="text-[11px] font-mono text-emerald-signal">v{task.turnCount}</span>
-              )}
-              {totalDuration && (
-                <span className="text-[11px] font-mono text-slate-steel">{totalDuration}s</span>
-              )}
+            <div className="flex items-center gap-2 flex-wrap min-w-0">
+              <Chip label="mode" value={task.mode} accent={task.mode === "deep"} />
+              {task.turnCount > 1 && <Chip label="version" value={`v${task.turnCount}`} />}
+              {totalDuration && <Chip label="elapsed" value={`${totalDuration}s`} />}
               {(task.usage?.input_tokens !== undefined || task.usage?.output_tokens !== undefined) && (
                 <Tooltip content={<UsageTooltip usage={task.usage} />}>
-                  <span className="text-[11px] font-mono text-slate-steel cursor-help">
-                    {(task.usage.input_tokens ?? 0).toLocaleString()} ↑ / {(task.usage.output_tokens ?? 0).toLocaleString()} ↓
+                  <span className="text-[10px] font-mono px-2 py-1 rounded bg-carbon border border-charcoal-subtle cursor-help inline-flex items-center gap-1.5">
+                    <span className="text-slate-steel">tokens</span>
+                    <span className="text-parchment">
+                      {(task.usage.input_tokens ?? 0).toLocaleString()}↑
+                      <span className="text-slate-steel mx-1">/</span>
+                      {(task.usage.output_tokens ?? 0).toLocaleString()}↓
+                    </span>
                   </span>
                 </Tooltip>
               )}
-              <span className="text-[10px] font-mono text-slate-steel/50 px-1.5 py-0.5 rounded bg-carbon border border-charcoal-subtle">{task.mode}</span>
             </div>
 
             {/* Actions + close — aligned together */}
@@ -478,9 +501,19 @@ export function TaskDetail() {
                 </div>
               )}
               {viewingTurn && viewingTurn.phases.length > 0 && (
-                <div>
-                  <div className="text-xs font-medium text-slate-steel uppercase tracking-wider mb-2">Pipeline · v{viewingTurn.seq + 1}</div>
-                  <PipelineView phases={viewingTurn.phases} streamingText={streamingText} streamingPhaseKind={streamingPhaseKind} streamingByPhase={streamingByPhase} />
+                <div className="space-y-3">
+                  <div className="flex items-center gap-2 mb-1">
+                    <div className="text-xs font-medium text-slate-steel uppercase tracking-wider">Pipeline · v{viewingTurn.seq + 1}</div>
+                    <div className="flex-1" />
+                    <PipelineViewToggle />
+                  </div>
+                  <PipelineRender
+                    phases={viewingTurn.phases}
+                    streamingText={streamingText}
+                    streamingPhaseKind={streamingPhaseKind}
+                    streamingByPhase={streamingByPhase}
+                  />
+                  <EventLogTail phases={viewingTurn.phases} />
                 </div>
               )}
             </div>
@@ -570,6 +603,91 @@ function isInsideMath(text: string, pos: number): boolean {
     if (text[i] === "$") dollars++;
   }
   return dollars % 2 !== 0;
+}
+
+function Chip({ label, value, accent }: { label: string; value: string; accent?: boolean }) {
+  return (
+    <span
+      className={`text-[10px] font-mono px-2 py-1 rounded bg-carbon inline-flex items-center gap-1.5 border ${
+        accent ? "border-emerald-signal/50" : "border-charcoal-subtle"
+      }`}
+    >
+      <span className="text-slate-steel">{label}</span>
+      <span className={accent ? "text-emerald-signal" : "text-parchment"}>{value}</span>
+    </span>
+  );
+}
+
+// Shared pipeline view mode — local state hoisted into a module singleton so
+// both the toggle and the renderer read the same value across re-renders.
+let _pipelineMode: "dag" | "list" = "dag";
+const _pipelineModeListeners = new Set<() => void>();
+function setPipelineMode(mode: "dag" | "list") {
+  if (_pipelineMode === mode) return;
+  _pipelineMode = mode;
+  _pipelineModeListeners.forEach((l) => l());
+}
+function usePipelineMode(): "dag" | "list" {
+  const [, force] = useState(0);
+  useEffect(() => {
+    const listener = () => force((x) => x + 1);
+    _pipelineModeListeners.add(listener);
+    return () => { _pipelineModeListeners.delete(listener); };
+  }, []);
+  return _pipelineMode;
+}
+
+function PipelineViewToggle() {
+  const mode = usePipelineMode();
+  return (
+    <div className="flex items-center text-[10px] font-mono tracking-[0.1em]">
+      <button
+        onClick={() => setPipelineMode("dag")}
+        className={`px-2 py-0.5 rounded-l border ${
+          mode === "dag"
+            ? "bg-emerald-dim border-emerald-signal/50 text-emerald-signal"
+            : "bg-carbon border-charcoal text-slate-steel hover:text-parchment"
+        }`}
+      >
+        DAG
+      </button>
+      <button
+        onClick={() => setPipelineMode("list")}
+        className={`px-2 py-0.5 rounded-r border -ml-px ${
+          mode === "list"
+            ? "bg-emerald-dim border-emerald-signal/50 text-emerald-signal"
+            : "bg-carbon border-charcoal text-slate-steel hover:text-parchment"
+        }`}
+      >
+        LIST
+      </button>
+    </div>
+  );
+}
+
+function PipelineRender({
+  phases,
+  streamingText,
+  streamingPhaseKind,
+  streamingByPhase,
+}: {
+  phases: import("../../types").PhaseDetail[];
+  streamingText?: string;
+  streamingPhaseKind?: string;
+  streamingByPhase?: Record<number, string>;
+}) {
+  const mode = usePipelineMode();
+  if (mode === "dag") {
+    return <PipelineDAG phases={phases} />;
+  }
+  return (
+    <PipelineView
+      phases={phases}
+      streamingText={streamingText}
+      streamingPhaseKind={streamingPhaseKind}
+      streamingByPhase={streamingByPhase}
+    />
+  );
 }
 
 function extractTldr(md: string): { tldr: string | null; rest: string } {
