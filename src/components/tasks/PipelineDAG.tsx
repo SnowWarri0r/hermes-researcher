@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useRef, useState, useEffect } from "react";
 import type { PhaseDetail, PhaseStatus } from "../../types";
 
 // ---------------------------------------------------------------------------
@@ -536,12 +536,12 @@ export function PipelineDAG({ phases }: { phases: PhaseDetail[] }) {
         {failedCount > 0 && <LegendDot color="var(--color-danger)" label={`${failedCount} failed`} />}
       </div>
 
-      <div className="overflow-x-auto">
+      <PanCanvas contentWidth={l.width} contentHeight={l.height}>
         <svg
           width={l.width}
           height={l.height}
           viewBox={`0 0 ${l.width} ${l.height}`}
-          className="block min-w-full"
+          className="block pointer-events-none select-none"
           role="img"
           aria-label="Pipeline DAG"
         >
@@ -681,7 +681,146 @@ export function PipelineDAG({ phases }: { phases: PhaseDetail[] }) {
             );
           })}
         </svg>
+      </PanCanvas>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Pan canvas — drag-to-pan, no scrollbars. Vertical height caps at 520px so
+// the DAG panel doesn't push the event log off-screen.
+// ---------------------------------------------------------------------------
+function PanCanvas({
+  contentWidth,
+  contentHeight,
+  children,
+}: {
+  contentWidth: number;
+  contentHeight: number;
+  children: React.ReactNode;
+}) {
+  const viewportRef = useRef<HTMLDivElement>(null);
+  const [viewport, setViewport] = useState({ w: 0, h: 0 });
+  const [tx, setTx] = useState(0);
+  const [ty, setTy] = useState(0);
+  const drag = useRef<{ active: boolean; startX: number; startY: number; startTx: number; startTy: number }>({
+    active: false,
+    startX: 0,
+    startY: 0,
+    startTx: 0,
+    startTy: 0,
+  });
+
+  // Max panel height — enough to see most DAGs without crowding out the
+  // event log panel below.
+  const maxH = 520;
+  const viewportH = Math.min(contentHeight, maxH);
+
+  // Observe viewport size so clamping works responsively.
+  useEffect(() => {
+    const el = viewportRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => {
+      setViewport({ w: el.clientWidth, h: el.clientHeight });
+    });
+    ro.observe(el);
+    setViewport({ w: el.clientWidth, h: el.clientHeight });
+    return () => ro.disconnect();
+  }, []);
+
+  function clamp(nextTx: number, nextTy: number) {
+    // If content is smaller than viewport, center it and disable pan on that axis
+    const overflowX = Math.max(0, contentWidth - viewport.w);
+    const overflowY = Math.max(0, contentHeight - viewport.h);
+    return {
+      tx: overflowX === 0 ? (viewport.w - contentWidth) / 2 : Math.min(0, Math.max(-overflowX, nextTx)),
+      ty: overflowY === 0 ? (viewport.h - contentHeight) / 2 : Math.min(0, Math.max(-overflowY, nextTy)),
+    };
+  }
+
+  // Auto-center once we have both content and viewport sizes
+  useEffect(() => {
+    if (viewport.w === 0) return;
+    const c = clamp(tx, ty);
+    if (c.tx !== tx || c.ty !== ty) {
+      setTx(c.tx);
+      setTy(c.ty);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [viewport.w, viewport.h, contentWidth, contentHeight]);
+
+  function onPointerDown(e: React.PointerEvent<HTMLDivElement>) {
+    (e.target as HTMLElement).setPointerCapture(e.pointerId);
+    drag.current = {
+      active: true,
+      startX: e.clientX,
+      startY: e.clientY,
+      startTx: tx,
+      startTy: ty,
+    };
+  }
+  function onPointerMove(e: React.PointerEvent<HTMLDivElement>) {
+    if (!drag.current.active) return;
+    const dx = e.clientX - drag.current.startX;
+    const dy = e.clientY - drag.current.startY;
+    const c = clamp(drag.current.startTx + dx, drag.current.startTy + dy);
+    setTx(c.tx);
+    setTy(c.ty);
+  }
+  function onPointerUp(e: React.PointerEvent<HTMLDivElement>) {
+    try {
+      (e.target as HTMLElement).releasePointerCapture(e.pointerId);
+    } catch {
+      /* noop */
+    }
+    drag.current.active = false;
+  }
+
+  // Wheel → pan (Shift or pure vertical wheel = pan vertically; horizontal wheel = pan horizontally)
+  function onWheel(e: React.WheelEvent<HTMLDivElement>) {
+    // Prevent page scroll when content has room to move
+    const canScrollX = contentWidth > viewport.w;
+    const canScrollY = contentHeight > viewport.h;
+    if (!canScrollX && !canScrollY) return;
+    e.preventDefault();
+    const c = clamp(tx - e.deltaX, ty - e.deltaY);
+    setTx(c.tx);
+    setTy(c.ty);
+  }
+
+  const hasOverflow = contentWidth > viewport.w || contentHeight > viewport.h;
+
+  return (
+    <div
+      ref={viewportRef}
+      className="relative overflow-hidden select-none"
+      style={{
+        height: `${viewportH}px`,
+        cursor: hasOverflow ? (drag.current.active ? "grabbing" : "grab") : "default",
+      }}
+      onPointerDown={hasOverflow ? onPointerDown : undefined}
+      onPointerMove={onPointerMove}
+      onPointerUp={onPointerUp}
+      onPointerCancel={onPointerUp}
+      onWheel={onWheel}
+    >
+      <div
+        style={{
+          transform: `translate(${tx}px, ${ty}px)`,
+          width: contentWidth,
+          height: contentHeight,
+        }}
+      >
+        {children}
       </div>
+      {hasOverflow && (
+        <div
+          className="absolute top-1 right-2 text-[9px] font-mono text-slate-steel/50 tracking-[0.14em] pointer-events-none select-none"
+          aria-hidden="true"
+        >
+          DRAG TO PAN
+        </div>
+      )}
     </div>
   );
 }
