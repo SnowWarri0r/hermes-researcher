@@ -22,14 +22,23 @@ export function Sidebar() {
     <aside className="w-[260px] h-full bg-carbon border-r border-charcoal flex flex-col shrink-0 relative z-[2]">
       {/* Logo */}
       <div className="px-5 py-4 border-b border-charcoal flex items-center gap-3">
-        <div className="animate-pulse-glow text-emerald-signal text-xl font-bold">
-          &#x26A1;
-        </div>
+        <svg
+          width="22"
+          height="22"
+          viewBox="0 0 24 24"
+          className="text-emerald-signal animate-pulse-glow shrink-0"
+          aria-hidden="true"
+        >
+          <path
+            d="M13 2L3 14h7l-1 8 11-14h-7l0-6z"
+            fill="currentColor"
+          />
+        </svg>
         <div>
-          <div className="text-sm font-semibold text-snow tracking-tight">
-            Hermes
+          <div className="text-sm font-semibold text-snow tracking-tight leading-none">
+            HERMES
           </div>
-          <div className="text-[10px] text-slate-steel font-mono tracking-[0.14em]">
+          <div className="text-[10px] text-slate-steel font-mono tracking-[0.14em] mt-1">
             RESEARCHER
           </div>
         </div>
