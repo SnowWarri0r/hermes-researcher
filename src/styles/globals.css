@@ -124,6 +124,9 @@ body {
 
 /* Mission-control ambient background — 64px grid + radial mask + radar glow.
    Applied at the root via .mc-ambient. Pure decoration; pointer-events disabled. */
+.mc-ambient {
+  background: var(--color-abyss);
+}
 .mc-ambient::before,
 .mc-ambient::after {
   content: "";
@@ -134,10 +137,10 @@ body {
 .mc-ambient::before {
   inset: 0;
   background-image:
-    linear-gradient(rgba(92, 88, 85, 0.35) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(92, 88, 85, 0.35) 1px, transparent 1px);
+    linear-gradient(rgba(180, 180, 180, 0.55) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(180, 180, 180, 0.55) 1px, transparent 1px);
   background-size: 64px 64px;
-  opacity: 0.22;
+  opacity: 0.08;
   -webkit-mask-image: radial-gradient(ellipse at 60% 25%, black 10%, transparent 70%);
   mask-image: radial-gradient(ellipse at 60% 25%, black 10%, transparent 70%);
 }
@@ -146,7 +149,7 @@ body {
   right: -220px;
   width: 720px;
   height: 720px;
-  background: radial-gradient(circle, rgba(0, 217, 146, 0.13) 0%, transparent 60%);
+  background: radial-gradient(circle, rgba(0, 217, 146, 0.18) 0%, transparent 60%);
 }
 
 /* Streaming cursor — thin 2px vertical line, refined from the design */

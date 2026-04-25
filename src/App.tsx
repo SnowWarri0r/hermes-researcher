@@ -54,7 +54,7 @@ function AppShell() {
   }, [pollHealth, refreshList]);
 
   return (
-    <div className="h-full flex bg-abyss mc-ambient">
+    <div className="h-full flex mc-ambient relative">
       <Sidebar />
       <main className="flex-1 flex flex-col overflow-hidden relative z-[1]">
         <div className="flex-1 overflow-y-auto p-6">
