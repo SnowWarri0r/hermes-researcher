@@ -2,7 +2,7 @@ import { NavLink } from "react-router";
 import { useMemo } from "react";
 import { useTaskStore } from "../../store/tasks";
 
-export function Sidebar() {
+export function Sidebar({ collapsed = false }: { collapsed?: boolean }) {
   const { tasks, connected, counts } = useTaskStore();
   const running = counts.running;
 
@@ -17,6 +17,8 @@ export function Sidebar() {
     }
     return sum;
   }, [tasks]);
+
+  if (collapsed) return <CollapsedSidebar running={running} connected={connected} />;
 
   return (
     <aside className="w-[260px] h-full bg-carbon border-r border-charcoal flex flex-col shrink-0 relative z-[2]">
@@ -124,6 +126,100 @@ export function Sidebar() {
           </div>
         </div>
       </div>
+    </aside>
+  );
+}
+
+function CollapsedSidebar({ running, connected }: { running: number; connected: boolean }) {
+  const items: { to: string; label: string; icon: React.ReactNode; badge?: number }[] = [
+    {
+      to: "/",
+      label: "Tasks",
+      icon: (
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+          <path d="M3 4h10M3 8h10M3 12h6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+        </svg>
+      ),
+      badge: running > 0 ? running : undefined,
+    },
+    {
+      to: "/knowledge",
+      label: "Knowledge",
+      icon: (
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+          <path d="M2 3h12M2 7h8M2 11h10" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+          <circle cx="13" cy="11" r="2" stroke="currentColor" strokeWidth="1.2" />
+        </svg>
+      ),
+    },
+    {
+      to: "/schedules",
+      label: "Schedules",
+      icon: (
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+          <circle cx="8" cy="8" r="5.5" stroke="currentColor" strokeWidth="1.5" />
+          <path d="M8 4.5v4l2.5 1.5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      ),
+    },
+    {
+      to: "/settings",
+      label: "Settings",
+      icon: (
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+          <circle cx="8" cy="8" r="2" stroke="currentColor" strokeWidth="1.5" />
+          <path
+            d="M8 2v2M8 12v2M2 8h2M12 8h2M3.76 3.76l1.41 1.41M10.83 10.83l1.41 1.41M3.76 12.24l1.41-1.41M10.83 5.17l1.41-1.41"
+            stroke="currentColor"
+            strokeWidth="1.2"
+            strokeLinecap="round"
+          />
+        </svg>
+      ),
+    },
+  ];
+
+  return (
+    <aside className="w-[56px] h-full bg-carbon border-r border-charcoal flex flex-col items-center shrink-0 relative z-[2] py-4 gap-3">
+      <NavLink to="/" className="block">
+        <svg
+          width="22"
+          height="22"
+          viewBox="0 0 24 24"
+          className="text-emerald-signal animate-pulse-glow"
+          aria-hidden="true"
+        >
+          <path d="M13 2L3 14h7l-1 8 11-14h-7l0-6z" fill="currentColor" />
+        </svg>
+      </NavLink>
+      <div className="w-5 h-px bg-charcoal" />
+      {items.map((item) => (
+        <NavLink
+          key={item.to}
+          to={item.to}
+          end={item.to === "/"}
+          title={item.label}
+          className={({ isActive }) =>
+            `relative w-8 h-8 grid place-items-center rounded transition-colors ${
+              isActive
+                ? "text-emerald-signal bg-emerald-dim border-l-2 border-emerald-signal -ml-[2px]"
+                : "text-slate-steel hover:text-parchment"
+            }`
+          }
+        >
+          {item.icon}
+          {item.badge !== undefined && (
+            <span className="absolute -top-1 -right-1 min-w-[14px] h-[14px] px-1 text-[9px] font-mono leading-[14px] text-center bg-agent-active/30 text-agent-thinking rounded-full border border-carbon">
+              {item.badge}
+            </span>
+          )}
+        </NavLink>
+      ))}
+      <div className="flex-1" />
+      <span
+        className={`w-1.5 h-1.5 rounded-full ${connected ? "bg-emerald-signal" : "bg-danger/70"}`}
+        title={connected ? "gateway online" : "gateway offline"}
+      />
     </aside>
   );
 }

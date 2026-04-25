@@ -168,20 +168,17 @@ export function TaskDetail() {
 
   if (!task) {
     return (
-      <>
-        <div onClick={closeTask} className="fixed inset-0 bg-black/60 z-40 animate-fade-in" />
-        <div className="fixed top-0 right-0 bottom-0 w-[min(960px,90vw)] bg-abyss border-l border-charcoal z-50 flex items-center justify-center animate-slide-in">
-          {loadError ? (
-            <div className="text-center max-w-sm px-6">
-              <div className="text-danger text-sm font-medium mb-2">Task not found</div>
-              <div className="text-xs text-slate-steel mb-4 font-mono">{loadError}</div>
-              <button onClick={closeTask} className="px-4 py-1.5 bg-carbon border border-charcoal rounded-md text-xs text-parchment hover:border-charcoal-light">Close</button>
-            </div>
-          ) : (
-            <div className="text-sm text-slate-steel animate-pulse">Loading...</div>
-          )}
-        </div>
-      </>
+      <div className="flex-1 flex items-center justify-center bg-abyss relative z-[1]">
+        {loadError ? (
+          <div className="text-center max-w-sm px-6">
+            <div className="text-danger text-sm font-medium mb-2">Task not found</div>
+            <div className="text-xs text-slate-steel mb-4 font-mono">{loadError}</div>
+            <button onClick={closeTask} className="px-4 py-1.5 bg-carbon border border-charcoal rounded-md text-xs text-parchment hover:border-charcoal-light">Close</button>
+          </div>
+        ) : (
+          <div className="text-sm text-slate-steel animate-pulse">Loading...</div>
+        )}
+      </div>
     );
   }
 
@@ -237,9 +234,7 @@ export function TaskDetail() {
   }
 
   return (
-    <>
-      <div onClick={closeTask} className="fixed inset-0 bg-black/60 z-40 animate-fade-in" />
-      <div className="fixed top-0 right-0 bottom-0 w-[min(1100px,92vw)] bg-abyss border-l border-charcoal z-50 flex flex-col animate-slide-in">
+    <div className="flex-1 bg-abyss flex flex-col overflow-hidden relative z-[1]">
         {/* Header */}
         <div className="px-6 py-4 border-b border-charcoal shrink-0">
           {/* Breadcrumb strip */}
@@ -365,9 +360,9 @@ export function TaskDetail() {
 
         {/* Body */}
         <div className="flex-1 overflow-y-auto">
-          <div className="px-6 py-5 grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-6">
+          <div className="px-8 py-5 grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_520px] gap-8">
             {/* Report column */}
-            <div className="min-w-0">
+            <div className="min-w-0 max-w-[920px] w-full mx-auto">
               {task.turns.length > 1 && (
                 <div className="flex items-center gap-1.5 mb-4 flex-wrap">
                   <span className="text-[11px] text-slate-steel uppercase tracking-wider mr-1">Version</span>
@@ -561,7 +556,6 @@ export function TaskDetail() {
           </div>
         </div>
       </div>
-    </>
   );
 }
 
