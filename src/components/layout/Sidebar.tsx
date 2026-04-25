@@ -1,12 +1,25 @@
 import { NavLink } from "react-router";
+import { useMemo } from "react";
 import { useTaskStore } from "../../store/tasks";
 
 export function Sidebar() {
   const { tasks, connected } = useTaskStore();
   const running = tasks.filter((t) => t.status === "running").length;
 
+  const todayTokens = useMemo(() => {
+    const now = new Date();
+    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+    let sum = 0;
+    for (const t of tasks) {
+      if ((t.completedAt ?? t.createdAt) >= startOfToday) {
+        sum += t.usage?.total_tokens ?? 0;
+      }
+    }
+    return sum;
+  }, [tasks]);
+
   return (
-    <aside className="w-[260px] h-full bg-carbon border-r border-charcoal flex flex-col shrink-0">
+    <aside className="w-[260px] h-full bg-carbon border-r border-charcoal flex flex-col shrink-0 relative z-[2]">
       {/* Logo */}
       <div className="px-5 py-4 border-b border-charcoal flex items-center gap-3">
         <div className="animate-pulse-glow text-emerald-signal text-xl font-bold">
@@ -16,8 +29,8 @@ export function Sidebar() {
           <div className="text-sm font-semibold text-snow tracking-tight">
             Hermes
           </div>
-          <div className="text-[11px] text-slate-steel">
-            Researcher
+          <div className="text-[10px] text-slate-steel font-mono tracking-[0.14em]">
+            RESEARCHER
           </div>
         </div>
       </div>
@@ -81,18 +94,58 @@ export function Sidebar() {
         />
       </nav>
 
-      {/* Connection status */}
-      <div className="px-4 py-3 border-t border-charcoal">
-        <div className="flex items-center gap-2 text-xs">
-          <span
-            className={`w-2 h-2 rounded-full ${connected ? "bg-success" : "bg-danger"}`}
-          />
-          <span className="text-slate-steel">
-            {connected ? "Connected" : "Disconnected"}
-          </span>
+      {/* System status block */}
+      <div className="border-t border-charcoal px-3 py-3 space-y-2">
+        <StatusRow
+          label="GATEWAY"
+          value={connected ? "online" : "offline"}
+          online={connected}
+        />
+        <StatusRow
+          label="PIPELINE"
+          value={running > 0 ? `${running} running` : "idle"}
+          online={running > 0}
+          pulse={running > 0}
+        />
+        <div className="bg-abyss border border-charcoal-subtle rounded-md px-3 py-2.5 mt-2">
+          <div className="text-[9px] text-slate-steel font-mono tracking-[0.14em] mb-1">TODAY · USAGE</div>
+          <div className="font-mono text-snow text-[17px] leading-none">
+            {formatTokens(todayTokens)}
+            <span className="text-slate-steel text-[11px] ml-1">tok</span>
+          </div>
         </div>
       </div>
     </aside>
+  );
+}
+
+function formatTokens(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(2)}M`;
+  if (n >= 1000) return `${(n / 1000).toFixed(1)}k`;
+  return String(n);
+}
+
+function StatusRow({
+  label,
+  value,
+  online,
+  pulse,
+}: {
+  label: string;
+  value: string;
+  online: boolean;
+  pulse?: boolean;
+}) {
+  const dot = online ? "bg-emerald-signal" : "bg-danger/70";
+  return (
+    <div className="flex items-center gap-2 px-1">
+      <span
+        className={`w-1.5 h-1.5 rounded-full shrink-0 ${dot}`}
+        style={pulse ? { boxShadow: "0 0 8px currentColor", color: "var(--color-emerald-signal)" } : undefined}
+      />
+      <span className="text-[10px] font-mono text-slate-steel tracking-[0.14em] flex-1">{label}</span>
+      <span className={`text-[10px] font-mono ${online ? "text-snow" : "text-slate-steel"}`}>{value}</span>
+    </div>
   );
 }
 
@@ -112,10 +165,10 @@ function SidebarLink({
       to={to}
       end={to === "/"}
       className={({ isActive }) =>
-        `w-full flex items-center gap-3 px-3 py-2 rounded-md text-sm transition-colors ${
+        `w-full flex items-center gap-3 px-3 py-2 rounded-md text-sm transition-colors border-l-2 ${
           isActive
-            ? "bg-emerald-dim text-emerald-signal"
-            : "text-parchment hover:bg-carbon-hover hover:text-snow"
+            ? "bg-emerald-dim text-emerald-signal border-emerald-signal"
+            : "text-parchment hover:bg-carbon-hover hover:text-snow border-transparent"
         }`
       }
     >

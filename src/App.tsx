@@ -54,9 +54,9 @@ function AppShell() {
   }, [pollHealth, refreshList]);
 
   return (
-    <div className="h-full flex bg-abyss">
+    <div className="h-full flex bg-abyss mc-ambient">
       <Sidebar />
-      <main className="flex-1 flex flex-col overflow-hidden">
+      <main className="flex-1 flex flex-col overflow-hidden relative z-[1]">
         <div className="flex-1 overflow-y-auto p-6">
           <Routes>
             <Route path="/" element={<TasksPage />} />

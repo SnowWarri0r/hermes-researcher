@@ -31,6 +31,11 @@ export function TaskList() {
     (t) => t.status === "completed" || t.status === "failed"
   );
 
+  // Counts derived from loaded tasks. For typical use (all tasks fit in a page)
+  // this matches the server-side totals; if paginated heavily it's approximate.
+  const counts: Record<string, number> = { "": tasks.length };
+  for (const t of tasks) counts[t.status] = (counts[t.status] ?? 0) + 1;
+
   return (
     <div>
       {/* Search + filter bar */}
@@ -56,19 +61,26 @@ export function TaskList() {
         </div>
 
         <div className="flex gap-1">
-          {STATUS_FILTERS.map((f) => (
-            <button
-              key={f.value}
-              onClick={() => setFilterStatus(f.value)}
-              className={`px-2.5 py-1.5 rounded-md text-[11px] font-medium border transition-colors ${
-                filterStatus === f.value
-                  ? "bg-emerald-dim border-emerald-signal/50 text-emerald-signal"
-                  : "bg-carbon border-charcoal text-slate-steel hover:text-parchment hover:border-charcoal-light"
-              }`}
-            >
-              {f.label}
-            </button>
-          ))}
+          {STATUS_FILTERS.map((f) => {
+            const active = filterStatus === f.value;
+            const n = counts[f.value] ?? 0;
+            return (
+              <button
+                key={f.value}
+                onClick={() => setFilterStatus(f.value)}
+                className={`px-2.5 py-1.5 rounded-pill text-[11px] font-medium border transition-colors flex items-center gap-1.5 ${
+                  active
+                    ? "bg-emerald-dim border-emerald-signal/50 text-emerald-signal"
+                    : "bg-carbon border-charcoal text-slate-steel hover:text-parchment hover:border-charcoal-light"
+                }`}
+              >
+                <span>{f.label}</span>
+                <span className={`text-[10px] font-mono ${active ? "text-emerald-signal/80" : "text-slate-steel/70"}`}>
+                  {n}
+                </span>
+              </button>
+            );
+          })}
         </div>
 
         {hasCompleted && !filterStatus && (
