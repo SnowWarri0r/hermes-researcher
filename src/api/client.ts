@@ -5,6 +5,7 @@ import type {
   ListTasksResponse,
   CreateTaskRequest,
   FollowupRequest,
+  ChatMessage,
 } from "../types";
 
 const API_BASE = "/api";
@@ -101,6 +102,34 @@ export async function retryTask(id: string): Promise<Task> {
 export async function deleteTask(id: string): Promise<void> {
   const res = await fetch(`${API_BASE}/tasks/${id}`, { method: "DELETE" });
   if (!res.ok) throw new Error(`deleteTask failed: ${res.status}`);
+}
+
+export async function listChatMessages(taskId: string): Promise<ChatMessage[]> {
+  const res = await fetch(`${API_BASE}/tasks/${taskId}/chat`);
+  if (!res.ok) throw new Error(`listChat failed: ${res.status}`);
+  const data = (await res.json()) as { messages: ChatMessage[] };
+  return data.messages;
+}
+
+export async function sendChatMessage(
+  taskId: string,
+  message: string,
+): Promise<ChatMessage> {
+  const res = await fetch(`${API_BASE}/tasks/${taskId}/chat`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ message }),
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`sendChat failed: ${res.status} ${text}`);
+  }
+  return res.json();
+}
+
+export async function clearChatThread(taskId: string): Promise<void> {
+  const res = await fetch(`${API_BASE}/tasks/${taskId}/chat`, { method: "DELETE" });
+  if (!res.ok) throw new Error(`clearChat failed: ${res.status}`);
 }
 
 export function subscribeToTask(

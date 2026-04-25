@@ -10,6 +10,7 @@ import { Tooltip } from "../common/Tooltip";
 import { UsageTooltip } from "../common/UsageTooltip";
 import { PipelineView } from "./PipelineView";
 import { ReportDiff } from "./ReportDiff";
+import { ReportChat } from "./ReportChat";
 import type { TurnDetail } from "../../types";
 
 interface ChainItem {
@@ -337,6 +338,10 @@ export function TaskDetail() {
                       : undefined
                   }
                 />
+              )}
+
+              {isLatestTurn && viewingTurn.status === "completed" && viewingTurn.report && (
+                <ReportChat />
               )}
 
               {isLatestTurn && (
