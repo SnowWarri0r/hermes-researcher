@@ -1,5 +1,5 @@
 import { useEffect, useCallback } from "react";
-import { BrowserRouter, Routes, Route, Navigate, useParams } from "react-router";
+import { BrowserRouter, Routes, Route, Navigate, useParams, useLocation } from "react-router";
 import { Sidebar } from "./components/layout/Sidebar";
 import { TaskCreator } from "./components/tasks/TaskCreator";
 import { TaskList } from "./components/tasks/TaskList";
@@ -35,9 +35,20 @@ function TasksPage() {
   );
 }
 
+function TaskDetailRoute() {
+  return (
+    <>
+      <TaskOpener />
+      <TaskDetail />
+    </>
+  );
+}
+
 function AppShell() {
   const setConnected = useTaskStore((s) => s.setConnected);
   const refreshList = useTaskStore((s) => s.refreshList);
+  const location = useLocation();
+  const isTaskDetail = location.pathname.startsWith("/tasks/");
 
   const pollHealth = useCallback(async () => {
     const ok = await checkHealth();
@@ -55,20 +66,25 @@ function AppShell() {
 
   return (
     <div className="h-full flex mc-ambient relative">
-      <Sidebar />
-      <main className="flex-1 flex flex-col overflow-hidden relative z-[1]">
-        <div className="flex-1 overflow-y-auto p-6">
-          <Routes>
-            <Route path="/" element={<TasksPage />} />
-            <Route path="/tasks/:taskId" element={<><TaskOpener /><TasksPage /></>} />
-            <Route path="/schedules" element={<Schedules />} />
-            <Route path="/knowledge" element={<Knowledge />} />
-            <Route path="/settings" element={<div className="max-w-3xl mx-auto"><Settings /></div>} />
-            <Route path="*" element={<Navigate to="/" replace />} />
-          </Routes>
-        </div>
-      </main>
-      <TaskDetail />
+      <Sidebar collapsed={isTaskDetail} />
+      {isTaskDetail ? (
+        <Routes>
+          <Route path="/tasks/:taskId" element={<TaskDetailRoute />} />
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+      ) : (
+        <main className="flex-1 flex flex-col overflow-hidden relative z-[1]">
+          <div className="flex-1 overflow-y-auto p-6">
+            <Routes>
+              <Route path="/" element={<TasksPage />} />
+              <Route path="/schedules" element={<Schedules />} />
+              <Route path="/knowledge" element={<Knowledge />} />
+              <Route path="/settings" element={<div className="max-w-3xl mx-auto"><Settings /></div>} />
+              <Route path="*" element={<Navigate to="/" replace />} />
+            </Routes>
+          </div>
+        </main>
+      )}
     </div>
   );
 }

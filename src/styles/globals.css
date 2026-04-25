@@ -170,6 +170,7 @@ body {
   border-radius: 0 var(--radius-md) var(--radius-md) 0;
   padding: 14px 18px;
   margin: 0 0 20px;
+  max-width: 760px;
 }
 .mc-tldr-label {
   font-size: 10px;
@@ -204,7 +205,7 @@ body {
   color: var(--color-snow);
   font-size: 14px;
   line-height: 1.65;
-  max-width: 72ch;
+  max-width: 760px;
 }
 
 .prose-hermes h1,
