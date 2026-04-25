@@ -852,25 +852,34 @@ export function isMinorRefinement(message: string): boolean {
 }
 
 // ---------------------------------------------------------------------------
-// Parse plan JSON
+// Shared JSON candidate extraction helper
 // ---------------------------------------------------------------------------
-export function parsePlan(raw: string): Plan | null {
-  // Try every ```json block AND raw text AND largest brace-balanced substring,
-  // using jsonrepair as a last resort. Validates that result has sections+questions.
+// Shared JSON candidate extractor: tries fenced ```json blocks, anonymous ```
+// fenced blocks, raw text, and the widest {...} substring. The `g` flag on the
+// regexes is required for stateful .exec() iteration.
+function extractJsonCandidates(raw: string): string[] {
   const candidates: string[] = [];
   const blockRe = /```json\s*([\s\S]*?)```/gi;
   let m: RegExpExecArray | null;
   while ((m = blockRe.exec(raw)) !== null) candidates.push(m[1]);
-  // Also try anonymous fenced blocks
   const anonRe = /```\s*([\s\S]*?)```/g;
   while ((m = anonRe.exec(raw)) !== null) candidates.push(m[1]);
   candidates.push(raw);
-  // Also extract the widest {...} substring
   const firstBrace = raw.indexOf("{");
   const lastBrace = raw.lastIndexOf("}");
   if (firstBrace !== -1 && lastBrace > firstBrace) {
     candidates.push(raw.slice(firstBrace, lastBrace + 1));
   }
+  return candidates;
+}
+
+// ---------------------------------------------------------------------------
+// Parse plan JSON
+// ---------------------------------------------------------------------------
+export function parsePlan(raw: string): Plan | null {
+  // Try every ```json block AND raw text AND largest brace-balanced substring,
+  // using jsonrepair as a last resort. Validates that result has sections+questions.
+  const candidates = extractJsonCandidates(raw);
 
   for (const candidate of candidates) {
     const parsed = tryParse(candidate.trim());
@@ -900,18 +909,7 @@ export function parsePlan(raw: string): Plan | null {
 // Parse thesis JSON output
 // ---------------------------------------------------------------------------
 export function parseThesis(raw: string): ParsedThesis | null {
-  const candidates: string[] = [];
-  const blockRe = /```json\s*([\s\S]*?)```/gi;
-  let m: RegExpExecArray | null;
-  while ((m = blockRe.exec(raw)) !== null) candidates.push(m[1]);
-  const anonRe = /```\s*([\s\S]*?)```/g;
-  while ((m = anonRe.exec(raw)) !== null) candidates.push(m[1]);
-  candidates.push(raw);
-  const firstBrace = raw.indexOf("{");
-  const lastBrace = raw.lastIndexOf("}");
-  if (firstBrace !== -1 && lastBrace > firstBrace) {
-    candidates.push(raw.slice(firstBrace, lastBrace + 1));
-  }
+  const candidates = extractJsonCandidates(raw);
 
   for (const candidate of candidates) {
     const text = candidate.trim();
