@@ -15,6 +15,7 @@ function normalizeLatex(text: string): string {
 export function ReportChat() {
   const messages = useTaskStore((s) => s.chatMessages);
   const streaming = useTaskStore((s) => s.streamingChatByMessage);
+  const streamingEvents = useTaskStore((s) => s.streamingChatEventsByMessage);
   const sendChat = useTaskStore((s) => s.sendChat);
   const clearChat = useTaskStore((s) => s.clearChat);
 
@@ -99,6 +100,7 @@ export function ReportChat() {
                   key={m.id}
                   message={m}
                   streamingOverride={streaming[m.id]}
+                  streamingEvents={streamingEvents[m.id]}
                 />
               ))}
             </div>
@@ -140,9 +142,11 @@ export function ReportChat() {
 function ChatBubble({
   message,
   streamingOverride,
+  streamingEvents,
 }: {
   message: ChatMessage;
   streamingOverride?: string;
+  streamingEvents?: TaskEvent[];
 }) {
   const isUser = message.role === "user";
   const isStreaming = message.status === "running";
@@ -150,6 +154,9 @@ function ChatBubble({
     isStreaming && streamingOverride !== undefined
       ? streamingOverride
       : message.content;
+  const eventsToShow = isStreaming
+    ? streamingEvents ?? []
+    : message.events ?? [];
 
   if (isUser) {
     return (
@@ -161,15 +168,26 @@ function ChatBubble({
     );
   }
 
+  // While streaming with no content yet but events arriving → show a "working"
+  // preview of the latest event so the user knows something is happening.
+  const liveHint = isStreaming && !displayText && eventsToShow.length > 0
+    ? describeEvent(eventsToShow[eventsToShow.length - 1])
+    : null;
+
   return (
     <div className="flex justify-start">
       <div className="max-w-[90%] bg-abyss border border-charcoal-subtle rounded-lg px-3 py-2">
-        {message.events && message.events.length > 0 && (
-          <ToolEvents events={message.events} />
+        {eventsToShow.length > 0 && (
+          <ToolEvents events={eventsToShow} streaming={isStreaming} />
+        )}
+        {liveHint && (
+          <div className="text-[11px] text-agent-thinking italic animate-pulse mb-1">
+            {liveHint}
+          </div>
         )}
         <div className="prose-hermes prose-hermes-compact text-[13px]">
           <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex]}>
-            {normalizeLatex(displayText || (isStreaming ? "" : ""))}
+            {normalizeLatex(displayText || "")}
           </ReactMarkdown>
           {isStreaming && (
             <span className="inline-block w-1.5 h-4 bg-emerald-signal/70 animate-pulse ml-0.5 align-text-bottom" />
@@ -185,16 +203,30 @@ function ChatBubble({
   );
 }
 
-function ToolEvents({ events }: { events: TaskEvent[] }) {
+function describeEvent(e: TaskEvent): string {
+  if (e.event === "tool.started") {
+    return e.preview || (e.tool ? `Using ${e.tool}…` : "Running tool…");
+  }
+  if (e.event === "tool.completed") {
+    return "Tool finished.";
+  }
+  if (e.event === "reasoning.available" || e.event === "reasoning.delta") {
+    return "Thinking…";
+  }
+  return e.event;
+}
+
+function ToolEvents({ events, streaming }: { events: TaskEvent[]; streaming?: boolean }) {
   const interesting = events.filter(
     (e) => e.event === "tool.started" || e.event === "tool.completed"
   );
   if (interesting.length === 0) return null;
 
   return (
-    <details className="mb-2">
+    <details className="mb-2" open={streaming}>
       <summary className="text-[10px] text-slate-steel cursor-pointer hover:text-parchment uppercase tracking-wider">
         {interesting.length} tool call{interesting.length === 1 ? "" : "s"}
+        {streaming && " (live)"}
       </summary>
       <div className="mt-1 space-y-0.5 pl-2 border-l border-charcoal-subtle">
         {interesting.map((ev, i) => (
