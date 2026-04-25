@@ -28,6 +28,8 @@ import {
   researchAdequacyPrompt,
   reportQualityPrompt,
   planReviewPrompt,
+  thesisPrompt,
+  parseThesis,
   parsePlan,
   isMinorRefinement,
 } from "./prompt.ts";
@@ -37,6 +39,7 @@ import type {
   TaskMode,
   TaskEvent,
   TokenUsage,
+  ParsedThesis,
 } from "../../shared/types.ts";
 
 function getMaxResearch(): number {
@@ -327,6 +330,9 @@ export interface PipelineCache {
   planReviewPassed?: boolean;
   planRevisedOutput?: string;
   planRevisedUsage?: TokenUsage;
+  thesisOutput?: string;
+  thesisUsage?: TokenUsage;
+  thesisParsed?: ParsedThesis;
   researchByBranch?: Map<number, { output: string; usage?: TokenUsage; label: string }>;
   outlineOutput?: string;
   outlineUsage?: TokenUsage;
@@ -734,6 +740,52 @@ async function runPlanReview(
   } catch {
     // On any failure, don't block the pipeline
     return { pass: true, score: 7, issues: [], rewriteHints: [], output: "", usage: undefined };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// A2. Thesis phase — produce refutable central claim + sub_claims + section plan
+// after research (and adequacy gate in deep mode).
+// Runs as a visible phase (seq=2, kind="critique", label="Thesis").
+// Returns parsed object or null on failure (degraded mode).
+// ---------------------------------------------------------------------------
+interface ThesisRunResult {
+  output: string;
+  usage?: TokenUsage;
+  parsed: ParsedThesis | null;
+}
+
+async function runThesis(
+  opts: PipelineOpts,
+  seq: number,
+  planSections: string[],
+  findings: { questionId: string; title: string; output: string }[],
+): Promise<ThesisRunResult> {
+  const phase = store.addPhase({
+    turnId: opts.turnId,
+    seq,
+    branch: 0,
+    kind: "critique",
+    label: "Thesis",
+    createdAt: Date.now(),
+  });
+
+  try {
+    const result = await runPhaseLite({
+      taskId: opts.taskId,
+      phaseId: phase.id,
+      kind: "critique",
+      prompt: thesisPrompt({
+        goal: opts.goal,
+        planSections,
+        findings,
+        language: opts.language,
+      }),
+    });
+    const parsed = parseThesis(result.output);
+    return { output: result.output, usage: result.usage, parsed };
+  } catch {
+    return { output: "", usage: undefined, parsed: null };
   }
 }
 
