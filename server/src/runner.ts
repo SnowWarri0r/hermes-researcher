@@ -557,9 +557,11 @@ async function runDeepMode(
     thesis = thesisResult.parsed;
   }
 
+  const thesisAvailable = cache?.thesisOutput !== undefined;
+
   // ── Outline (seq=3 now) ──
   let outlineText: string;
-  if (cache?.outlineOutput) {
+  if (cache?.outlineOutput && thesisAvailable) {
     replayPhase(opts.turnId, opts.taskId, {
       seq: 3, branch: 0, kind: "critique", label: "Outline (cached)",
       output: cache.outlineOutput, usage: cache.outlineUsage,
@@ -583,7 +585,7 @@ async function runDeepMode(
   });
 
   let draftOutput: string;
-  if (cache?.draftOutput) {
+  if (cache?.draftOutput && thesisAvailable) {
     replayPhase(opts.turnId, opts.taskId, {
       seq: 4, branch: 0, kind: "draft", label: "Draft report (cached)",
       output: cache.draftOutput, usage: cache.draftUsage,
@@ -602,7 +604,7 @@ async function runDeepMode(
 
   // ── Critique (seq=5 now) ──
   let critiqueOutput: string;
-  if (cache?.critiqueOutput) {
+  if (cache?.critiqueOutput && thesisAvailable) {
     replayPhase(opts.turnId, opts.taskId, {
       seq: 5, branch: 0, kind: "critique", label: "Self-critique (cached)",
       output: cache.critiqueOutput, usage: cache.critiqueUsage,
