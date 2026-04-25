@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
@@ -193,6 +193,23 @@ function PhaseBody({ phase, streamingText }: { phase: PhaseDetail; streamingText
   const hasDisplayText = displayText.trim().length > 0;
   const showingStream = isRunning && hasDisplayText;
 
+  const streamScrollRef = useRef<HTMLDivElement>(null);
+  const eventsScrollRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (showingStream && streamScrollRef.current) {
+      const el = streamScrollRef.current;
+      el.scrollTop = el.scrollHeight;
+    }
+  }, [displayText, showingStream]);
+
+  useEffect(() => {
+    if (isRunning && eventsScrollRef.current) {
+      const el = eventsScrollRef.current;
+      el.scrollTop = el.scrollHeight;
+    }
+  }, [phase.events.length, isRunning]);
+
   return (
     <div className="border-t border-charcoal-subtle px-3 py-3 space-y-3">
       {phase.error && (
@@ -206,7 +223,7 @@ function PhaseBody({ phase, streamingText }: { phase: PhaseDetail; streamingText
           <div className="text-[10px] text-slate-steel uppercase tracking-wider mb-1.5">
             {showingStream ? "Streaming..." : "Output"}
           </div>
-          <div className="bg-abyss border border-charcoal-subtle rounded-md px-3 py-2.5 max-h-[320px] overflow-y-auto">
+          <div ref={streamScrollRef} className="bg-abyss border border-charcoal-subtle rounded-md px-3 py-2.5 max-h-[320px] overflow-y-auto">
             <div className="prose-hermes prose-hermes-compact">
               <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex]}>
                 {normalizeLatex(showingStream ? sanitizeStreamingMarkdown(displayText) : displayText)}
@@ -222,7 +239,7 @@ function PhaseBody({ phase, streamingText }: { phase: PhaseDetail; streamingText
           <div className="text-[10px] text-slate-steel uppercase tracking-wider mb-1.5">
             Tool activity
           </div>
-          <div className="space-y-0.5 max-h-[180px] overflow-y-auto">
+          <div ref={eventsScrollRef} className="space-y-0.5 max-h-[180px] overflow-y-auto">
             {phase.events
               .filter(
                 (e) =>
