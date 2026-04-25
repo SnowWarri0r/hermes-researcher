@@ -96,7 +96,7 @@ export function TaskCard({ task }: { task: Task }) {
               </span>
             )}
             {(task.usage?.input_tokens !== undefined || task.usage?.output_tokens !== undefined) && (
-              <Tooltip content={<UsageTooltip usage={task.usage} />}>
+              <Tooltip content={<UsageTooltip usage={task.usage} />} className="inline-flex items-center">
                 <span className="text-[11px] font-mono text-slate-steel cursor-help">
                   {formatTokens(task.usage.input_tokens ?? 0)}↑ / {formatTokens(task.usage.output_tokens ?? 0)}↓
                 </span>
