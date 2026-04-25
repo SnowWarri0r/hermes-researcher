@@ -385,56 +385,103 @@ export function outlinePrompt(opts: {
   goal: string;
   plan: Plan;
   findings: { questionId: string; title: string; output: string }[];
+  thesis?: ParsedThesis | null;
+  language?: string;
 }): string {
-  const compressed = compressFindings(opts.findings);
-  const findingsBlock = compressed
-    .map((f) => `### ${f.questionId}: ${f.title}\n\n${f.output}`)
+  const findingsBlock = opts.findings
+    .map((f) => `### ${f.questionId}: ${f.title}\n\n${f.output.slice(0, 2500)}`)
     .join("\n\n---\n\n");
 
-  return `# Outline the report
+  // Degraded path — current behavior when thesis is null (parse failed or feature off).
+  if (!opts.thesis) {
+    const sectionsList = opts.plan.sections.map((s, i) => `${i + 1}. ${s}`).join("\n");
+    return `# Report outline
 
-Before writing prose, commit to **what each section will argue** and **what evidence it will use**. Do NOT write paragraphs.
+Build a per-section skeleton for the final report BEFORE prose is written.
 
 ## Goal
 ${opts.goal}
 
-## Planned sections
-${opts.plan.sections.map((s) => `- ${s}`).join("\n")}
+## Sections (in order)
+${sectionsList}
 
-## Findings
+## Research findings
 ${findingsBlock}
 
-## Output format
+## Output format (Markdown, pure skeleton — NO prose paragraphs)
 
-For each section, produce:
-
-\`\`\`
-## <section name>
-claim: <one sentence — the thesis of this section>
-- fact: <short phrase> — <source short name> (<URL or Q-id>)
-- fact: <short phrase> — <source short name> (<URL or Q-id>)
-- fact: ...
-\`\`\`
-
-Rules:
-- Every section must lead with a **claim sentence**. If a section has no claim, merge it or drop it.
-- 2–5 facts per section, each a **short phrase** — not a full sentence. Cite the source.
-- Do NOT write prose, transitions, or commentary. This is a skeleton, not a draft.
-- 2–3 sentences MAX for the TL;DR claim.
-- If two planned sections would make the same argument, merge them.
-
-Example (English but same structure applies for Chinese):
+For each section in the list above, produce:
 
 \`\`\`
-## TL;DR
-claim: 本月开源模型的卖点从会聊天转向了能执行任务
+## Section: <section name>
+**Key facts to include**:
+- Q#: "verbatim short fact with number or quote"
+- Q#: "..."
+**Length target**: ~NNN words
+\`\`\`
 
-## agent 能力成为主战场
-claim: 三个月内发布的顶级开源模型都把 agent 能力放在 README 顶部
-- fact: GLM-5.1 宣传 SWE-Bench 58.4, 多千次 tool calls — hf.co (Q2)
-- fact: MiniMax-M2.7 自称 3 分钟事故恢复 — hf.co (Q2)
-- fact: Claude Code Routines HN 401 upvotes — news.ycombinator.com (Q1)
-\`\`\``;
+## Rules
+- Section order + names MUST match the list above verbatim.
+- At least 3 key facts per section, each tagged with its Q#.
+- No prose — this is a skeleton.
+${opts.language ? `- Final report will be written in ${opts.language}; section names should be rendered in that language here too.` : ""}`;
+  }
+
+  // Thesis-driven path ---------------------------------------------------
+  const t = opts.thesis;
+  const subClaimsBlock = t.sub_claims
+    .map((sc) => `- **${sc.id}**: ${sc.text}  *(supported by: ${sc.evidence_from.join(", ")})*`)
+    .join("\n");
+  const sectionPlanBlock = t.section_plan
+    .map((e, i) => `${i + 1}. **${e.section}** — sub_claim: ${e.sub_claim ?? "(connective)"}  role: ${e.role}`)
+    .join("\n");
+
+  return `# Report outline (thesis-driven)
+
+Translate the approved thesis into a writable skeleton. The draft writer will follow this exactly.
+
+## Goal
+${opts.goal}
+
+## Central claim (MUST be paraphrased in TL;DR by the draft)
+${t.central_claim}
+
+## Sub-claims
+${subClaimsBlock}
+
+## Section plan (order and names are FIXED)
+${sectionPlanBlock}
+
+## Research findings (reference by Q#)
+${findingsBlock}
+
+## Output format (Markdown, pure skeleton — NO prose)
+
+For each section in the section_plan, produce this block:
+
+\`\`\`
+## Section: <section name verbatim>  (carries <sub_claim id or "connective">)
+
+**Section claim**: <for content sections: sub_claim text verbatim or a tight paraphrase>
+**Connection IN**: <concrete anchor word/phrase this section's first sentence MUST contain>
+**Connection OUT**: <concrete hook word/phrase this section's last sentence MUST contain (omit for final section)>
+**Key facts to include**:
+- Q#: "specific number or quoted phrase from findings"
+- Q#: "..."
+- Q#: "..."
+**Length target**: ~NNN words
+\`\`\`
+
+For the FIRST section (typically TL;DR), only Connection OUT is required — it opens the report, nothing precedes it.
+For the LAST section, only Connection IN is required — it closes the report.
+
+## Hard rules
+- Section names + order MUST match section_plan verbatim.
+- Connection IN/OUT MUST be concrete anchor words (domain-specific nouns or phrases). Forbidden: "承接上文", "as mentioned above", "furthermore", "in conclusion", "building on".
+- Each section ≥3 key facts, each tagged with Q#, each containing a specific number or ≤15-word quoted phrase (not "discussion of X").
+- If total sections < 3, Connection IN/OUT for middle sections may be merged into one line.
+${opts.language ? `- Section names rendered in ${opts.language}.` : ""}
+- This is a skeleton, not a draft. No paragraphs of prose.`;
 }
 
 // ---------------------------------------------------------------------------
