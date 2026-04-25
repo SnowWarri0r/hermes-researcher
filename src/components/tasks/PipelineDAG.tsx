@@ -317,7 +317,7 @@ function buildLayout(phases: PhaseDetail[]): {
   });
 
   const width = cursorX - GAP_COL + PAD_X;
-  const height = maxBottom + PAD_Y;
+  let height = maxBottom + PAD_Y;
 
   // ---- Build edges ----
   const edges: LayoutEdge[] = [];
@@ -361,19 +361,26 @@ function buildLayout(phases: PhaseDetail[]): {
     }
   }
 
-  // Research → thesis: fan-in from ALL research nodes
-  if (thesisN) {
+  // Research → thesis: fan-in from TERMINAL research only.
+  // A terminal research node is one that no other research depends on.
+  // Non-terminal research's findings reach thesis transitively via the
+  // depends_on chain — drawing every research-to-thesis edge clutters the
+  // view and (worse) routes lines through intermediate research nodes.
+  if (thesisN || researchNodes.length > 0) {
+    const hasOutgoingDep = new Set<string>();
     for (const n of nodes) {
-      if (n.flavor === "research") pushEdge(n, thesisN);
+      if (n.flavor !== "research" || !n.qid) continue;
+      const deps = depsById.get(n.qid) ?? [];
+      for (const d of deps) hasOutgoingDep.add(d);
     }
-  } else if (researchNodes.length > 0) {
-    // No thesis (standard without thesis? shouldn't happen post-T9 but defensive)
-    // connect all research to next-col head (likely outline/draft)
-    const nextHead = outlineN ?? draftN;
-    if (nextHead) {
-      for (const n of nodes) {
-        if (n.flavor === "research") pushEdge(n, nextHead);
-      }
+    const terminals = nodes.filter(
+      (n) => n.flavor === "research" && n.qid && !hasOutgoingDep.has(n.qid)
+    );
+    // If no metadata, every research is its own terminal.
+    const effectiveTerminals = terminals.length > 0 ? terminals : nodes.filter((n) => n.flavor === "research");
+    const nextAfterResearch = thesisN ?? outlineN ?? draftN;
+    if (nextAfterResearch) {
+      for (const n of effectiveTerminals) pushEdge(n, nextAfterResearch);
     }
   }
 
@@ -406,6 +413,21 @@ function buildLayout(phases: PhaseDetail[]): {
       // The re-critique was triggered by a failed quality gate on the previous revise.
       edges.push({ fromId: chain[i - 1].id, toId: n.id, style: "loop", highlight: false });
     }
+  }
+
+  // If any edge spans >1 column we reserve a "bus lane" at the bottom to
+  // route through without crossing intermediate nodes.
+  const hasCrossCol = edges.some((e) => {
+    const fn = nodeById.get(e.fromId);
+    const tn = nodeById.get(e.toId);
+    return fn && tn && tn.col - fn.col > 1;
+  });
+  if (hasCrossCol) height += 32;
+  // If any loop edge exists we reserve a little arch room at the top.
+  const hasLoop = edges.some((e) => e.style === "loop");
+  if (hasLoop) {
+    height += 22;
+    for (const n of nodes) n.y += 22;
   }
 
   return { nodes, edges, width, height };
@@ -500,11 +522,30 @@ export function PipelineDAG({ phases }: { phases: PhaseDetail[] }) {
             const y1 = from.y + from.h / 2;
             const x2 = to.x;
             const y2 = to.y + to.h / 2;
-            const dx = Math.max(30, (x2 - x1) * 0.55);
-            const d = `M ${x1} ${y1} C ${x1 + dx} ${y1}, ${x2 - dx} ${y2}, ${x2} ${y2}`;
+
+            const colSpan = to.col - from.col;
+            let d: string;
+
+            if (colSpan > 1) {
+              // Multi-column edge: route below ALL intermediate nodes so the
+              // line never crosses a node box. Build a manhattan-ish path that
+              // dips down to a shared "bus" lane below the graph.
+              const busY = l.height - 6;
+              d = `M ${x1} ${y1} C ${x1 + 24} ${y1}, ${x1 + 24} ${busY}, ${x1 + 40} ${busY} L ${x2 - 40} ${busY} C ${x2 - 24} ${busY}, ${x2 - 24} ${y2}, ${x2} ${y2}`;
+            } else if (e.style === "loop") {
+              // Loop-back (re-critique): arch upward above the row
+              const archY = Math.min(from.y, to.y) - 18;
+              const midX = (x1 + x2) / 2;
+              d = `M ${x1} ${y1} C ${midX} ${archY}, ${midX} ${archY}, ${x2} ${y2}`;
+            } else {
+              // Normal adjacent-column edge: smooth bezier
+              const dx = Math.max(30, (x2 - x1) * 0.55);
+              d = `M ${x1} ${y1} C ${x1 + dx} ${y1}, ${x2 - dx} ${y2}, ${x2} ${y2}`;
+            }
+
             const stroke = e.style === "loop" ? "#ffba0088" : e.highlight ? "#00d99288" : "#2a2d33";
             const marker = e.style === "loop" ? "url(#dag-arrow-loop)" : e.highlight ? "url(#dag-arrow)" : "url(#dag-arrow-dim)";
-            const dash = e.style === "dashed" || (!e.highlight && e.style !== "loop") ? "3 3" : e.style === "loop" ? "2 3" : undefined;
+            const dash = e.style === "loop" ? "2 3" : !e.highlight ? "3 3" : undefined;
             return (
               <path
                 key={i}
@@ -514,7 +555,7 @@ export function PipelineDAG({ phases }: { phases: PhaseDetail[] }) {
                 fill="none"
                 markerEnd={marker}
                 strokeDasharray={dash}
-                opacity={e.style === "loop" ? 0.6 : 1}
+                opacity={e.style === "loop" ? 0.7 : 1}
               />
             );
           })}
