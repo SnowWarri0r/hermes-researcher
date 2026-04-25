@@ -264,13 +264,34 @@ body {
 .prose-hermes li > ol { margin: 0.2em 0; }
 
 .prose-hermes blockquote {
-  border-left: 2px solid var(--color-emerald-signal);
+  position: relative;
+  border: 1px solid var(--color-charcoal-subtle);
+  border-left: 3px solid var(--color-warning);
   margin: 1.2em 0;
-  padding: 0.1em 1em;
+  padding: 1em 1.2em 0.9em 1.2em;
   color: var(--color-parchment);
-  background: color-mix(in srgb, var(--color-emerald-signal) 5%, transparent);
+  background: linear-gradient(180deg,
+    color-mix(in srgb, var(--color-warning) 6%, transparent),
+    color-mix(in srgb, var(--color-warning) 2%, transparent));
   border-radius: 0 var(--radius-md) var(--radius-md) 0;
+  font-style: italic;
 }
+.prose-hermes blockquote::before {
+  content: "\201C";
+  position: absolute;
+  top: -6px;
+  right: 12px;
+  font-family: "Georgia", "Times New Roman", serif;
+  font-style: normal;
+  font-size: 44px;
+  line-height: 1;
+  color: var(--color-warning);
+  opacity: 0.28;
+  pointer-events: none;
+}
+.prose-hermes blockquote > *:first-child { margin-top: 0; }
+.prose-hermes blockquote > *:last-child { margin-bottom: 0; }
+.prose-hermes blockquote p { color: var(--color-snow); }
 
 .prose-hermes code {
   font-family: var(--font-mono);
@@ -282,17 +303,69 @@ body {
   color: var(--color-mint);
 }
 
-.prose-hermes pre {
-  background: var(--color-carbon);
+/* Code blocks are wrapped in .mc-codeblock by the custom md `pre` component.
+   The outer div owns the border + header; the pre/code stays naked inside. */
+.mc-codeblock {
   border: 1px solid var(--color-charcoal);
   border-radius: var(--radius-md);
-  padding: 1em 1.2em;
+  overflow: hidden;
+  margin: 1.2em 0;
+  background: var(--color-abyss);
+}
+.mc-codeblock-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  background: var(--color-carbon);
+  border-bottom: 1px solid var(--color-charcoal);
+  font-size: 10px;
+  font-family: var(--font-mono);
+  letter-spacing: 0.16em;
+  color: var(--color-slate-steel);
+  text-transform: uppercase;
+}
+.mc-codeblock-header-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: var(--color-emerald-signal);
+  box-shadow: 0 0 6px color-mix(in srgb, var(--color-emerald-signal) 60%, transparent);
+}
+.mc-codeblock-lang {
+  color: var(--color-emerald-signal);
+  text-transform: lowercase;
+  letter-spacing: 0.06em;
+  margin-left: auto;
+}
+.prose-hermes .mc-codeblock pre {
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  padding: 0.9em 1.1em;
+  overflow-x: auto;
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.55;
+}
+.prose-hermes .mc-codeblock pre code {
+  background: transparent;
+  border: none;
+  padding: 0;
+  color: var(--color-snow);
+  font-size: inherit;
+}
+/* Fallback for any raw <pre> without our wrapper (e.g. streaming mid-block) */
+.prose-hermes pre {
+  background: var(--color-abyss);
+  border: 1px solid var(--color-charcoal);
+  border-radius: var(--radius-md);
+  padding: 0.9em 1.1em;
   overflow-x: auto;
   margin: 1.2em 0;
   font-size: 13px;
   line-height: 1.55;
 }
-
 .prose-hermes pre code {
   background: transparent;
   border: none;
@@ -307,6 +380,39 @@ body {
   margin: 2em 0;
 }
 
+/* Tables wrapped by the custom md component get an mc-table-wrapper with
+   a mono header strip. Raw <table> from markdown still works as fallback. */
+.mc-table-wrapper {
+  border: 1px solid var(--color-charcoal);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  margin: 1.2em 0;
+  background: var(--color-abyss);
+}
+.mc-table-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  background: var(--color-carbon);
+  border-bottom: 1px solid var(--color-charcoal);
+  font-size: 10px;
+  font-family: var(--font-mono);
+  letter-spacing: 0.18em;
+  color: var(--color-slate-steel);
+}
+.mc-table-header::before {
+  content: "";
+  width: 5px; height: 5px; border-radius: 999px;
+  background: var(--color-info);
+  box-shadow: 0 0 5px color-mix(in srgb, var(--color-info) 60%, transparent);
+}
+.prose-hermes .mc-table-wrapper table {
+  margin: 0;
+  border: none;
+  border-radius: 0;
+  width: 100%;
+}
 .prose-hermes table {
   width: 100%;
   border-collapse: collapse;

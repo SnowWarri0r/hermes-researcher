@@ -25,6 +25,14 @@ interface ChainItem {
   createdAt: number;
 }
 
+function extractLanguage(node: React.ReactElement | undefined): string | null {
+  if (!node || typeof node !== "object") return null;
+  const props = (node as React.ReactElement<{ className?: string }>).props;
+  const cls = props?.className ?? "";
+  const m = cls.match(/language-([\w+-]+)/);
+  return m ? m[1] : null;
+}
+
 const mdComponents = {
   a: ({
     href,
@@ -35,6 +43,39 @@ const mdComponents = {
       {children}
     </a>
   ),
+  // Wrap fenced code blocks with a language header bar. Inline code still
+  // renders as <code> (handled by default). ReactMarkdown passes the <code>
+  // child as `children` of <pre>; peek at it for the language class.
+  pre: ({
+    children,
+    ...rest
+  }: React.HTMLAttributes<HTMLPreElement>) => {
+    const firstChild = Array.isArray(children) ? children[0] : children;
+    const lang = extractLanguage(firstChild as React.ReactElement | undefined);
+    return (
+      <div className="mc-codeblock">
+        <div className="mc-codeblock-header">
+          <span className="mc-codeblock-header-dot" />
+          <span>code</span>
+          {lang && <span className="mc-codeblock-lang">{lang}</span>}
+        </div>
+        <pre {...rest}>{children}</pre>
+      </div>
+    );
+  },
+  // Wrap tables with a mono header strip. Caption — if the author wrote
+  // one via `<caption>` — becomes the label; otherwise a generic "TABLE".
+  table: ({
+    children,
+    ...rest
+  }: React.TableHTMLAttributes<HTMLTableElement>) => {
+    return (
+      <div className="mc-table-wrapper">
+        <div className="mc-table-header">TABLE</div>
+        <table {...rest}>{children}</table>
+      </div>
+    );
+  },
 };
 
 export function TaskDetail() {
