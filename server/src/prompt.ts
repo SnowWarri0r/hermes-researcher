@@ -704,7 +704,22 @@ ${styleGuide(opts.language)}`;
 // 6. EDITOR pass — polish language only, no structural change.
 // Fights AI voice that survived revise. Uses lite phase.
 // ---------------------------------------------------------------------------
-export function editorPrompt(opts: { goal: string; language?: string }): string {
+export function editorPrompt(opts: {
+  goal: string;
+  language?: string;
+  thesisPresent?: boolean;
+}): string {
+  const preserveBlock = opts.thesisPresent
+    ? `
+
+## Do NOT disturb (narrative arc must survive the edit)
+- Do NOT change section heading text.
+- Do NOT remove or rephrase the TL;DR opening sentence.
+- Do NOT remove the Connection IN/OUT anchor words in section first/last sentences.
+- Do NOT remove the final "so what" statement.
+Your job is language, not structure.`
+    : "";
+
   return `# Copy edit
 
 You are the copy editor for a top-tier technology publication. The writer submitted a revised draft. Your job: **tighten the language, kill AI voice, preserve all substance**.
@@ -713,22 +728,15 @@ You are the copy editor for a top-tier technology publication. The writer submit
 ${opts.goal}
 
 ## What to change
-- **Strike banned phrases.** Remove or rewrite every instance of: "值得关注", "核心在于", "本质上", "这说明", "这意味着", "某种程度上", "一方面...另一方面", "正在成为", "结构性", "范式", "不难发现", "从X来看", "it's worth noting", "fundamentally", "this suggests", "this means that", "paradigm shift", "disruptive", "leverages".
-- **Reduce bolding.** Max 2 bolded phrases per paragraph. Strike bolding that's there for AI visual rhythm rather than scannable emphasis.
-- **Break repetitive rhythm.** If three consecutive sentences start with the same connector (然而/同时/此外), rewrite two of them.
-- **Prefer specific over abstract.** Replace "推进了产品化进程" with the concrete action. Replace "生态正在成熟" with the specific evidence of maturation.
-- **Compress.** "在 2026 年 4 月这一时间节点" → "4 月". Kill redundant modifiers. One adjective is plenty.
-- **Kill meta-commentary tails.** Paragraphs ending with "这说明X正在Y" usually say nothing — cut them.
-
-## What NOT to change
-- All facts, numbers, dates, names, citations, URLs must remain exactly as the writer had them.
-- All section headings and ordering stay.
-- The writer's opinions and judgments stay — sharpen their phrasing, don't dilute them.
-- Do not add new citations or claims.
-${opts.language ? `- Language: keep in ${opts.language}.` : ""}
+- Strike banned AI-voice phrases.
+- Reduce bolding — at most 1–2 bolded terms per paragraph.
+- Compress. Kill meta-commentary, "it is worth noting", stacked adjectives, filler.
+- Fix any remaining "this means that" / "this suggests" tails.
+- Preserve every fact, number, citation, and link.${preserveBlock}
 
 ## Output
-Output ONLY the final edited report. No preamble, no change log, no "here's the edited version", no sign-off. Start directly with the \`## TL;DR\` heading.`;
+Return the edited report in full, ready to publish. No change log, no preamble.
+${opts.language ? `\nFinal copy is in ${opts.language}.` : ""}`;
 }
 
 // Slim revise — used with conversation_history that contains draft + critique
@@ -736,25 +744,35 @@ export function reviseInstructionPrompt(opts: {
   goal: string;
   toolsets: string[];
   language?: string;
+  thesis?: ParsedThesis | null;
+  outline?: string;
 }): string {
   const toolsetsBlock =
     opts.toolsets.length > 0
       ? `\n\nYou may use these toolsets for fact-checking if needed: ${opts.toolsets.join(", ")}`
       : "";
 
-  return `# Final revision
+  const narrativeReminder = opts.thesis
+    ? `
 
-Apply the critique above to produce the final report.
+## Preserve the narrative arc (mandatory)
 
-## Goal
+**Central claim**: ${opts.thesis.central_claim}
 
-${opts.goal}${toolsetsBlock}
+Your revision MUST preserve:
+- TL;DR opening that paraphrases the central_claim
+- Section headings matching plan.sections verbatim
+- Connection IN/OUT anchor words in each section
+- Sub-claim restatement per section
+- Final "so what"
 
-## Rules
+If the critique flagged narrative issues (tagged N1–N6), fix THOSE specifically — do not rewrite sections that are already working.`
+    : "";
 
-- Output ONLY the final report. No meta-commentary about what changed.
-- Address the priority fix list. Strengthen weak claims or remove them.
-- The report must read as a standalone document.
+  return `# Revise your draft based on the critique above
+
+Apply the critique. Output the complete revised report.
+${toolsetsBlock}${narrativeReminder}
 
 ${styleGuide(opts.language)}`;
 }
@@ -838,7 +856,22 @@ Rules:
 export function reportQualityPrompt(opts: {
   goal: string;
   report: string;
+  thesis?: ParsedThesis | null;
 }): string {
+  const thesisBlock = opts.thesis
+    ? `
+
+## Narrative arc check (thesis present)
+
+**Central claim**: ${opts.thesis.central_claim}
+
+If ANY of these is true, set score ≤ 3 and pass=false:
+- TL;DR does not paraphrase the central claim
+- No cross-section connectors (sections read as independent Q&A)
+- Final section has no "so what" (pure summary)
+`
+    : "";
+
   return `# Report quality evaluation
 
 Score this research report on a 1-10 scale.
@@ -848,7 +881,7 @@ ${opts.goal}
 
 ## Report
 ${opts.report.slice(0, 8000)}
-
+${thesisBlock}
 ## Output (strict JSON)
 \`\`\`json
 {
