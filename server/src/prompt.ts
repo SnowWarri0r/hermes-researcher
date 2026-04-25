@@ -493,6 +493,7 @@ export function draftPrompt(opts: {
   plan: Plan;
   findings: { questionId: string; title: string; output: string }[];
   outline?: string;
+  thesis?: ParsedThesis | null;
   language?: string;
 }): string {
   const compressed = compressFindings(opts.findings);
@@ -500,54 +501,72 @@ export function draftPrompt(opts: {
     .map((f) => `### ${f.questionId}: ${f.title}\n\n${f.output}`)
     .join("\n\n---\n\n");
 
+  const sectionsList = opts.plan.sections.map((s, i) => `${i + 1}. ${s}`).join("\n");
+
   const outlineBlock = opts.outline
-    ? `\n## Outline to expand (follow this structure — do NOT add or skip sections)\n\n${opts.outline}\n`
+    ? `\n\n## Outline (follow this skeleton verbatim)\n\n${opts.outline}\n\n`
     : "";
 
-  return `# Report drafting
+  // Narrative-arc block: only when thesis is present AND non-null (approved path).
+  const narrativeBlock = opts.thesis
+    ? buildNarrativeArcBlock(opts.thesis)
+    : "";
 
-## Writer persona
-
-You write like a senior industry analyst for a publication such as *The Information*, *Stratechery*, or *36氪深度*. Your voice is:
-
-- **Direct**: you state what you think, not what "some may argue".
-- **Specific**: every generalization is backed by a name, number, or quote.
-- **Opinionated**: when the evidence supports a judgment, you take the position. You don't hide behind "值得观察".
-- **Spare**: you kill every word that doesn't earn its place. No "一方面...另一方面" theater.
-- **Unimpressed**: you assume the reader already knows what an LLM is. You don't explain, you analyze.
+  return `# Write the report
 
 ## Goal
-
 ${opts.goal}
-${opts.context ? `\n## Context\n\n${opts.context}\n` : ""}
-${outlineBlock}
-## Research findings (raw input from parallel investigations)
 
-${findingsBlock}
+${opts.context ? `## Context\n\n${opts.context}\n\n` : ""}## Planned sections
+${sectionsList}
 
-## How to write
-
-1. **Follow the outline above verbatim** if provided. Don't add sections. Don't merge sections the outline separates.
-2. **Each section: lead with the claim, then marshal evidence.** Not "A happened. B happened. C happened." but "X is true — A (source), B (source), C (source) all point the same way."
-3. **Use direct quotes** from the raw findings when a source said it more vividly than you could summarize. Keep quotes short (<30 words), in quotation marks, with citation.
-4. **TL;DR: state the thesis in one sentence.** Not "we investigated X, Y, Z". Not "综合来看, 2026-04-16...". Just: what's the single most important thing the reader should know?
-5. **Don't restate findings. Synthesize them.** Draft only adds value if it says something the raw findings didn't state directly.
-
-## Style example — GOOD vs BAD
-
-BAD (AI slop — reject):
-> ## AI 代理能力成为新战场
->
-> 2026-04-16 的 AI 领域呈现出明显的结构性转变：**模型能力正在从单纯对话向代理执行迁移**。一方面，GLM-5.1 在 README 中强调 agent 能力；另一方面，MiniMax-M2.7 也把 log analysis 作为核心卖点。这在某种程度上说明，开源社区正在对"能执行任务"的模型形成共识。
-
-GOOD (direct, specific):
-> ## Agent 能力取代参数规模成为开源卖点
->
-> 本周发布的三个主流开源模型都把 agent 能力写进 README 顶部。GLM-5.1 直接标 SWE-Bench 58.4，强调"数百轮 tool calls"（[hf.co/zai-org/GLM-5.1](https://huggingface.co/zai-org/GLM-5.1)）。MiniMax-M2.7 更激进：宣称把事故恢复压缩到"under three minutes"（[hf.co/MiniMaxAI/MiniMax-M2.7](https://huggingface.co/MiniMaxAI/MiniMax-M2.7)）。参数规模、benchmark 平均分——这两个过去的主卖点——几乎消失了。这不代表它们不重要，而是已经沦为背景；真正影响采购决策的指标换了。
-
-Notice in the GOOD example: one bolded phrase, no "值得关注", no "一方面...另一方面", opinions stated flatly, specifics with URLs, final line delivers a judgment.
+## Research findings
+${findingsBlock}${outlineBlock}${narrativeBlock}
 
 ${styleGuide(opts.language)}`;
+}
+
+function buildNarrativeArcBlock(thesis: ParsedThesis): string {
+  const subClaims = thesis.sub_claims
+    .map((sc) => `- ${sc.id}: ${sc.text}`)
+    .join("\n");
+  return `
+
+## Hard rules — narrative arc (thesis is non-null, these rules are NOT optional)
+
+**Central claim** (MUST appear as a paraphrase in TL;DR opening):
+> ${thesis.central_claim}
+
+**Sub-claims** (each section carries one):
+${subClaims}
+
+**Heading rules**:
+- Use plan.sections names VERBATIM as \`##\` headings.
+- NEVER use "Q1: ..." / "Question 1: ..." / "问题一：..." as a heading. Research question IDs belong only in internal notes, never in the published report.
+
+**TL;DR rules**:
+- First sentence MUST be a paraphrase of the central_claim above. Do NOT write "This report discusses...", "下面将分析...", "本文讨论...".
+- Mention 1-2 of the sub-claims in the TL;DR as a preview arc.
+
+**Per-section rules** (for each content section):
+- First sentence MUST include the Connection IN anchor word from the outline.
+- Last sentence MUST include the Connection OUT hook word (except the final section).
+- Each section MUST restate or advance its assigned sub_claim at least once (paraphrase is fine).
+
+**Closer rules** (final section):
+- Contain exactly one explicit "so what" — a reader's next action, a prediction, or a flat judgment. Not a summary.
+
+## BAD / GOOD
+
+❌ BAD:
+  "## Q3: 当天哪些论文值得注意？
+   arXiv 上有 8 篇论文..."
+
+✅ GOOD (section name from plan, connection IN from outline, sub-claim advanced):
+  "## 研究圈的跟进
+   如果说应用层已经把 agent 当成既定事实（上一节提到的 43 条 HN 讨论），那
+   研究圈本周的八篇论文正好回答同一个问题的另一侧：能力兑现率。..."
+`;
 }
 
 // ---------------------------------------------------------------------------
