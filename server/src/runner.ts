@@ -27,6 +27,7 @@ import {
   followupContextPrompt,
   researchAdequacyPrompt,
   reportQualityPrompt,
+  planReviewPrompt,
   parsePlan,
   isMinorRefinement,
 } from "./prompt.ts";
@@ -321,6 +322,11 @@ function replayPhase(
 export interface PipelineCache {
   planOutput?: string;
   planUsage?: TokenUsage;
+  planReviewOutput?: string;
+  planReviewUsage?: TokenUsage;
+  planReviewPassed?: boolean;
+  planRevisedOutput?: string;
+  planRevisedUsage?: TokenUsage;
   researchByBranch?: Map<number, { output: string; usage?: TokenUsage; label: string }>;
   outlineOutput?: string;
   outlineUsage?: TokenUsage;
@@ -671,6 +677,67 @@ async function runDeepMode(
 }
 
 // ---------------------------------------------------------------------------
+// A. Plan review gate — audit plan for structural defects before research.
+// Runs as a visible phase (seq=0, branch=1, kind="critique") in deep mode.
+// ---------------------------------------------------------------------------
+interface PlanReviewVerdict {
+  pass: boolean;
+  score: number;
+  issues: string[];
+  rewriteHints: string[];
+  output: string;
+  usage?: TokenUsage;
+}
+
+function parsePlanReview(content: string): { pass: boolean; score: number; issues: string[]; rewriteHints: string[] } {
+  const jsonBlock = content.match(/```json\s*([\s\S]*?)```/i);
+  const candidate = (jsonBlock ? jsonBlock[1] : content).trim();
+  let parsed: { pass?: boolean; score?: number; issues?: unknown; rewrite_hints?: unknown };
+  try {
+    parsed = JSON.parse(candidate);
+  } catch {
+    try {
+      parsed = JSON.parse(jsonrepair(candidate));
+    } catch {
+      return { pass: true, score: 7, issues: [], rewriteHints: [] };
+    }
+  }
+  const issues = Array.isArray(parsed.issues) ? parsed.issues.map(String).slice(0, 5) : [];
+  const rewriteHints = Array.isArray(parsed.rewrite_hints) ? parsed.rewrite_hints.map(String).slice(0, 5) : [];
+  const score = typeof parsed.score === "number" ? parsed.score : 7;
+  const pass = typeof parsed.pass === "boolean" ? parsed.pass : score >= 6;
+  return { pass, score, issues, rewriteHints };
+}
+
+async function runPlanReview(
+  opts: PipelineOpts,
+  planOutput: string,
+): Promise<PlanReviewVerdict> {
+  const phase = store.addPhase({
+    turnId: opts.turnId,
+    seq: 0,
+    branch: 1,
+    kind: "critique",
+    label: "Plan review",
+    createdAt: Date.now(),
+  });
+
+  try {
+    const result = await runPhaseLite({
+      taskId: opts.taskId,
+      phaseId: phase.id,
+      kind: "critique",
+      prompt: planReviewPrompt({ goal: opts.goal, planOutput, language: opts.language }),
+    });
+    const verdict = parsePlanReview(result.output);
+    return { ...verdict, output: result.output, usage: result.usage };
+  } catch {
+    // On any failure, don't block the pipeline
+    return { pass: true, score: 7, issues: [], rewriteHints: [], output: "", usage: undefined };
+  }
+}
+
+// ---------------------------------------------------------------------------
 // B. Research adequacy gate
 // ---------------------------------------------------------------------------
 const MAX_SUPPLEMENTARY_RESEARCH = 3;
@@ -791,10 +858,71 @@ async function runPlanAndResearch(
     planOutput = planResult.output;
   }
 
-  const plan = parsePlan(planOutput) ?? {
+  let plan = parsePlan(planOutput) ?? {
     sections: ["TL;DR", "Details", "References"],
     questions: [{ id: "Q1", title: goal, approach: "Treat the full goal as one research thread; search web and cite primary sources." }],
   };
+
+  // ── A. Plan review gate (standard + deep, max 1 revision) ──
+  // Quick mode has no plan (direct report), so it never reaches here.
+  {
+    if (cache?.planReviewOutput) {
+      replayPhase(turnId, taskId, {
+        seq: 0, branch: 1, kind: "critique",
+        label: "Plan review (cached)",
+        output: cache.planReviewOutput, usage: cache.planReviewUsage,
+      });
+      usages.push(cache.planReviewUsage);
+      // If the cached review rejected the plan, replay the cached revised plan too
+      if (cache.planReviewPassed === false && cache.planRevisedOutput) {
+        replayPhase(turnId, taskId, {
+          seq: 0, branch: 2, kind: "plan",
+          label: "Plan (revised, cached)",
+          output: cache.planRevisedOutput, usage: cache.planRevisedUsage,
+        });
+        usages.push(cache.planRevisedUsage);
+        planOutput = cache.planRevisedOutput;
+        const reparsed = parsePlan(planOutput);
+        if (reparsed) plan = reparsed;
+      }
+    } else {
+      const review = await runPlanReview(opts, planOutput);
+      usages.push(review.usage);
+
+      if (!review.pass && review.rewriteHints.length > 0) {
+        broadcast(taskId, {
+          event: "pipeline.plan_revised",
+          data: { score: review.score, issues: review.issues },
+        });
+
+        const revisedPhase = store.addPhase({
+          turnId, seq: 0, branch: 2, kind: "plan",
+          label: "Plan (revised)", createdAt: Date.now(),
+        });
+
+        const basePlanPrompt = planPrompt({ goal, context, toolsets, language: opts.language });
+        const priorKnowledge = searchPriorKnowledge(goal);
+        const revisionAppendix =
+          `\n\n## Previous plan was rejected — fix these issues\n\n` +
+          review.rewriteHints.map((h, i) => `${i + 1}. ${h}`).join("\n") +
+          (review.issues.length > 0
+            ? `\n\nIssues identified by reviewer:\n` + review.issues.map((i) => `- ${i}`).join("\n")
+            : "");
+
+        const revised = await runPhaseLite({
+          taskId,
+          phaseId: revisedPhase.id,
+          kind: "plan",
+          prompt: basePlanPrompt + priorKnowledge + revisionAppendix,
+        });
+        usages.push(revised.usage);
+        planOutput = revised.output;
+        const reparsed = parsePlan(planOutput);
+        if (reparsed) plan = reparsed;
+        // MAX_PLAN_REVISIONS = 1 — do not re-review.
+      }
+    }
+  }
 
   const researchQuestions = plan.questions.slice(0, getMaxResearch());
 

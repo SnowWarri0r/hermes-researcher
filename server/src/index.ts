@@ -188,8 +188,14 @@ app.post("/api/tasks/:id/retry", (c) => {
     for (const phase of lastTurn.phases) {
       if (phase.status !== "completed") continue;
       if (phase.kind === "plan") {
-        cache.planOutput = phase.output;
-        cache.planUsage = phase.usage;
+        // Plan branch 0 = original plan, branch 2 = revised plan after review rejection
+        if (phase.branch === 0) {
+          cache.planOutput = phase.output;
+          cache.planUsage = phase.usage;
+        } else if (phase.branch === 2 && phase.label.startsWith("Plan (revised")) {
+          cache.planRevisedOutput = phase.output;
+          cache.planRevisedUsage = phase.usage;
+        }
       } else if (phase.kind === "research") {
         if (!cache.researchByBranch) cache.researchByBranch = new Map();
         cache.researchByBranch.set(phase.branch, { output: phase.output, usage: phase.usage, label: phase.label });
@@ -197,8 +203,15 @@ app.post("/api/tasks/:id/retry", (c) => {
         cache.draftOutput = phase.output;
         cache.draftUsage = phase.usage;
       } else if (phase.kind === "critique") {
-        // Outline and Self-critique both have kind="critique"; distinguish by label
-        if (phase.label.startsWith("Outline")) {
+        // Outline, Plan review, and Self-critique all have kind="critique"; distinguish by label
+        if (phase.label.startsWith("Plan review")) {
+          cache.planReviewOutput = phase.output;
+          cache.planReviewUsage = phase.usage;
+          // A revised plan phase appearing in the same turn means review rejected
+          cache.planReviewPassed = !lastTurn.phases.some(
+            (p) => p.kind === "plan" && p.branch === 2 && p.label.startsWith("Plan (revised"),
+          );
+        } else if (phase.label.startsWith("Outline")) {
           cache.outlineOutput = phase.output;
           cache.outlineUsage = phase.usage;
         } else if (phase.label.startsWith("Self-critique")) {
