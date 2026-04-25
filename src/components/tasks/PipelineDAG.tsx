@@ -103,24 +103,43 @@ function shortLabel(p: PhaseDetail, flavor: PhaseKindFlavor): string {
   return KIND_SHORT[flavor] ?? p.label;
 }
 
-// Wrap a string into ≤2 lines, keeping words intact where possible.
-// Returns [line1, line2?]
-function wrap2(text: string, maxChars: number): [string, string?] {
-  if (text.length <= maxChars) return [text];
-  // Prefer to break at a space near maxChars
-  const head = text.slice(0, maxChars);
-  const lastSpace = head.lastIndexOf(" ");
-  const breakAt = lastSpace >= Math.floor(maxChars * 0.6) ? lastSpace : maxChars;
-  const l1 = text.slice(0, breakAt).trim();
-  let l2 = text.slice(breakAt).trim();
-  if (l2.length > maxChars) l2 = l2.slice(0, maxChars - 1) + "…";
-  return [l1, l2];
+// Rough per-character width at the DAG's 11px text size. CJK is roughly
+// full-width, Latin is half-width. Used to estimate how many lines the
+// browser will render so we can reserve height.
+function estimateCharWidth(c: string, fontSize = 11): number {
+  if (/[　-鿿＀-￯가-힯]/.test(c)) return fontSize;
+  return fontSize * 0.55;
+}
+
+function countWrapLines(text: string, maxPx: number, fontSize = 11): number {
+  // Walk char by char; whenever width exceeds maxPx, start a new line.
+  // Prefer word boundaries for Latin-majority text but also handle CJK.
+  let lines = 1;
+  let lineW = 0;
+  let sinceSpace = 0;
+  for (const c of text) {
+    const cw = estimateCharWidth(c, fontSize);
+    if (lineW + cw > maxPx) {
+      // Break. If we can go back to last space, do so.
+      lines++;
+      if (sinceSpace > 0 && /[A-Za-z0-9]/.test(c)) {
+        lineW = sinceSpace + cw; // carry the current word
+      } else {
+        lineW = cw;
+      }
+      sinceSpace = 0;
+    } else {
+      lineW += cw;
+      if (/\s/.test(c)) sinceSpace = 0;
+      else sinceSpace += cw;
+    }
+  }
+  return lines;
 }
 
 type LayoutNode = {
   id: string;                 // stable key: phase.id as string
-  label: string;              // one-line version used for tooltip title
-  lines: [string, string?];   // 1 or 2 display lines
+  label: string;              // full display label (wraps via foreignObject)
   flavor: PhaseKindFlavor;
   status: PhaseStatus;
   duration?: number;
@@ -144,13 +163,24 @@ type LayoutEdge = {
 // Node width scheme: research questions need more room for the full title;
 // pipeline phases fit in a narrower box.
 function widthFor(flavor: PhaseKindFlavor): number {
-  if (flavor === "research") return 170;
+  if (flavor === "research") return 220;
   if (flavor === "plan-revised" || flavor === "plan-review" || flavor === "re-critique") return 150;
-  return 130;
+  return 140;
 }
 
-function heightFor(lines: [string, string?]): number {
-  return lines[1] !== undefined ? 52 : 40;
+// Text constants
+const TEXT_FS = 11;      // px
+const LINE_H = 15;       // px per wrapped line
+const NODE_PAD_X = 10;   // inner padding for the text foreignObject
+const NODE_PAD_TOP = 6;
+const STATUS_LINE_H = 14;
+const NODE_MIN_H = 40;
+
+function heightFor(label: string, width: number): number {
+  const innerW = width - NODE_PAD_X * 2;
+  const lines = countWrapLines(label, innerW, TEXT_FS);
+  const h = NODE_PAD_TOP + lines * LINE_H + STATUS_LINE_H + 6;
+  return Math.max(NODE_MIN_H, h);
 }
 
 // Top-to-bottom flow: stages stack vertically; nodes within a stage spread
@@ -272,19 +302,16 @@ function buildLayout(phases: PhaseDetail[]): {
   const nodes: LayoutNode[] = [];
   const nodeById = new Map<string, LayoutNode>();
 
-  // First pass: build all node objects with width, lines, height; defer x/y.
+  // First pass: build all node objects with width + height; defer x/y.
   const pending: { sn: SlotNode; node: LayoutNode; stageIdx: number }[] = [];
   stages.forEach((stage, stageIdx) => {
     stage.forEach((sn, laneIdx) => {
       const w = widthFor(sn.flavor);
-      const wrapChars = Math.floor((w - 18) / 6.5);
       const label = shortLabel(sn.phase, sn.flavor);
-      const lines = wrap2(label, wrapChars);
-      const h = heightFor(lines);
+      const h = heightFor(label, w);
       const node: LayoutNode = {
         id: String(sn.phase.id),
         label,
-        lines,
         flavor: sn.flavor,
         status: sn.phase.status,
         duration:
@@ -576,9 +603,19 @@ export function PipelineDAG({ phases }: { phases: PhaseDetail[] }) {
             );
           })}
 
-          {/* Nodes */}
+          {/* Nodes — foreignObject lets the browser wrap CJK + Latin natively */}
           {l.nodes.map((n) => {
             const t = nodeTheme(n.status);
+            const statusText =
+              n.duration !== undefined
+                ? `${n.duration.toFixed(1)}s`
+                : n.status === "running"
+                ? "running"
+                : n.status === "pending"
+                ? "pending"
+                : n.status === "failed"
+                ? "failed"
+                : "";
             return (
               <g key={n.id}>
                 <title>{n.label}</title>
@@ -607,48 +644,38 @@ export function PipelineDAG({ phases }: { phases: PhaseDetail[] }) {
                     <animate attributeName="opacity" values="0.05;0.35;0.05" dur="1.8s" repeatCount="indefinite" />
                   </rect>
                 )}
-                {/* Line 1 */}
-                <text
-                  x={n.x + 10}
-                  y={n.y + (n.lines[1] ? 16 : 17)}
-                  fontSize="11"
-                  fill={t.text}
-                  fontWeight={n.status === "running" ? 600 : 500}
+                {/* Label — HTML inside SVG for native wrapping */}
+                <foreignObject
+                  x={n.x + NODE_PAD_X}
+                  y={n.y + NODE_PAD_TOP}
+                  width={n.w - NODE_PAD_X * 2}
+                  height={n.h - NODE_PAD_TOP - STATUS_LINE_H}
                 >
-                  {n.lines[0]}
-                </text>
-                {/* Line 2 */}
-                {n.lines[1] && (
-                  <text
-                    x={n.x + 10}
-                    y={n.y + 30}
-                    fontSize="11"
-                    fill={t.text}
-                    opacity={0.85}
+                  <div
+                    style={{
+                      fontSize: `${TEXT_FS}px`,
+                      lineHeight: `${LINE_H}px`,
+                      color: t.text,
+                      fontWeight: n.status === "running" ? 600 : 500,
+                      overflow: "hidden",
+                      wordBreak: "break-word",
+                      overflowWrap: "anywhere",
+                      fontFamily: "var(--font-sans)",
+                    }}
                   >
-                    {n.lines[1]}
-                  </text>
-                )}
+                    {n.label}
+                  </div>
+                </foreignObject>
                 {/* Status line */}
                 <text
-                  x={n.x + 10}
-                  y={n.y + n.h - 8}
+                  x={n.x + NODE_PAD_X}
+                  y={n.y + n.h - 6}
                   fontSize="9"
                   fill={t.dim}
                   fontFamily="var(--font-mono)"
                   letterSpacing="0.06em"
                 >
-                  {statusIcon(n.status)}
-                  {" "}
-                  {n.duration !== undefined
-                    ? `${n.duration.toFixed(1)}s`
-                    : n.status === "running"
-                    ? "running"
-                    : n.status === "pending"
-                    ? "pending"
-                    : n.status === "failed"
-                    ? "failed"
-                    : ""}
+                  {statusIcon(n.status)} {statusText}
                 </text>
               </g>
             );
