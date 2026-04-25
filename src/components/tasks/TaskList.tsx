@@ -27,14 +27,17 @@ export function TaskList() {
     return () => clearTimeout(debounceRef.current);
   }, [localQuery, setSearch]);
 
-  const hasCompleted = tasks.some(
-    (t) => t.status === "completed" || t.status === "failed"
-  );
+  const storeCounts = useTaskStore((s) => s.counts);
+  const hasCompleted = storeCounts.completed + storeCounts.failed > 0;
 
-  // Counts derived from loaded tasks. For typical use (all tasks fit in a page)
-  // this matches the server-side totals; if paginated heavily it's approximate.
-  const counts: Record<string, number> = { "": tasks.length };
-  for (const t of tasks) counts[t.status] = (counts[t.status] ?? 0) + 1;
+  // Filter pill counts come from the server-side unfiltered totals so they
+  // stay correct regardless of which filter is active.
+  const counts: Record<string, number> = {
+    "": storeCounts.all,
+    running: storeCounts.running,
+    completed: storeCounts.completed,
+    failed: storeCounts.failed,
+  };
 
   return (
     <div>
