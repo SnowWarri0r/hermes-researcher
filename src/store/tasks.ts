@@ -306,7 +306,7 @@ export const useTaskStore = create<TaskStore>()((set, get) => ({
             if (event.event === "chat.event") {
               const data = event as unknown as Record<string, unknown>;
               const messageId = typeof data.messageId === "number" ? data.messageId : undefined;
-              const inner = data.event as import("../types").TaskEvent | undefined;
+              const inner = data.payload as import("../types").TaskEvent | undefined;
               if (messageId !== undefined && inner) {
                 set((s) => ({
                   streamingChatEventsByMessage: {

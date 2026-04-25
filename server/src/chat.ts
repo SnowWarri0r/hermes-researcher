@@ -127,10 +127,12 @@ export async function runChatMessage(opts: {
       } else {
         // All other events (tool.started, tool.completed, reasoning.available,
         // reasoning.delta, etc.) flow through as-is so the UI can show progress.
+        // Use `payload` (not `event`) to avoid a field-name collision with the
+        // outer SSE event name when the client spreads the JSON into its event.
         events.push(event);
         broadcast(taskId, {
           event: "chat.event",
-          data: { messageId: assistantMsg.id, event },
+          data: { messageId: assistantMsg.id, payload: event },
         });
       }
     }
