@@ -507,12 +507,7 @@ app.get("/api/tasks/:id/stream", (c) => {
       data: JSON.stringify({ task }),
     });
 
-    const latest = task.turns[task.turns.length - 1];
-    if (!latest || latest.status !== "running") {
-      return;
-    }
-
-    // Live subscription
+    // Live subscription — keep open even for completed tasks so chat events flow through.
     const chan: { event: string; data: string }[] = [];
     let resolver: (() => void) | null = null;
 
