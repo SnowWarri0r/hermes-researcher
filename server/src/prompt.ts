@@ -81,10 +81,27 @@ Then output the plan as JSON inside a fenced code block with language "json". Sc
   "sections": ["TL;DR", "Section B", "..."],
   "questions": [
     {"id": "Q1", "title": "specific question", "approach": "concrete search strategy + data sources"},
-    {"id": "Q2", "title": "...", "approach": "..."}
+    {"id": "Q2", "title": "...", "approach": "...", "depends_on": ["Q1"]}
   ]
 }
 \`\`\`
+
+## When to use \`depends_on\` (DAG scheduling)
+
+The research executor runs questions in **topological order**. Questions with no dependencies run in parallel on level 0. A question whose \`depends_on\` lists prior Q IDs runs after those complete, and the executor passes those prerequisites' outputs into its prompt as context.
+
+Use \`depends_on\` when a later question genuinely needs the previous one's findings to scope itself. Typical patterns:
+
+- **Scope definition → deep dive**: "Q1: define the candidate set" (e.g. cameras in price range, trending repos, shortlisted papers). "Q2/Q3/...": depends_on Q1, compare/evaluate the candidates on specific axes.
+- **Event discovery → event analysis**: "Q1: what releases dropped on 2026-04-24?" → "Q2: depends_on Q1, for each release, extract reception/adoption signals".
+- **Entity identification → attribute lookup**: "Q1: who are the top 5 contributors to X?" → "Q2: depends_on Q1, for each, summarize their prior work".
+
+Do NOT use \`depends_on\` for:
+- Convenience ("it'd be nice if Q2 could see Q1"). If Q2 can scope itself independently, don't chain it.
+- Pure ordering preference. Only declare dependencies that are strictly required for Q2 to execute correctly.
+- Linear chains. A plan that serializes every Q behind the previous (Q2→Q1, Q3→Q2, Q4→Q3) defeats the parallel research pattern. In that case, collapse into a single question or redesign the decomposition.
+
+Default is NO \`depends_on\` — most questions should run in parallel.
 
 ## Rules for good questions
 
@@ -135,7 +152,7 @@ ${opts.planOutput}
 </plan_to_review>
 
 <evaluation_criteria>
-Rate the plan against six criteria. A single hard failure on criteria 1-3 = pass:false.
+Rate the plan against seven criteria. A single hard failure on criteria 1-3 or 7 = pass:false.
 
 1. **Decomposition axis** — Questions split by ANALYTICAL DIMENSION, not by data source.
    ❌ BAD: "Q1: HN top posts / Q2: HF top models / Q3: arXiv top papers" (one source per question → forces each branch to be a one-source listing → aggregation, not synthesis)
@@ -152,6 +169,12 @@ Rate the plan against six criteria. A single hard failure on criteria 1-3 = pass
 5. **Question quality** — Not meta or circular. "What is the background?", "Why is this important?", "Provide an overview" are all bad — these aren't retrievable questions, they're report sections disguised as questions.
 
 6. **Coverage** — The questions collectively address the goal's key dimensions. If the goal asks for X+Y+Z, missing Y entirely = fail.
+
+7. **DAG health** — The \`depends_on\` graph is legitimate, not over-serialized.
+   ❌ BAD: full chain — every Q depends_on its predecessor (Q2→Q1, Q3→Q2, Q4→Q3). This means nothing runs in parallel; collapse into fewer bigger questions.
+   ❌ BAD: phantom dependency — Q2 lists Q1 as prereq but its approach doesn't actually need Q1's output (planner padded depends_on without reason).
+   ✅ GOOD: one scope-definition Q (no deps) + several deep-dive Qs that genuinely need the scope (all depend on the scope Q, but run in parallel with each other).
+   ✅ GOOD: all Qs independent (empty depends_on), running in parallel. This is the common case.
 </evaluation_criteria>
 
 <output_format>
@@ -170,20 +193,20 @@ Then output exactly ONE fenced \`\`\`json block with this schema:
 \`\`\`
 
 Fields:
-- "pass": boolean. false if any hard failure on criteria 1-3, OR score < 6.
+- "pass": boolean. false if any hard failure on criteria 1-3 or 7, OR score < 6.
 - "score": integer 1-10.
-- "failing_criteria": array of criterion numbers (1-6) that failed.
+- "failing_criteria": array of criterion numbers (1-7) that failed.
 - "issues": short strings, each identifying ONE specific problem (quote the question id). Max 5.
 - "rewrite_hints": actionable instructions for the revision pass. REQUIRED if pass=false. Max 5.
 </output_format>
 
 <scoring_rubric>
-- 1-5: At least one hard failure on criteria 1, 2, or 3. Structural rot. pass=false.
+- 1-5: At least one hard failure on criteria 1, 2, 3, or 7. Structural rot. pass=false.
 - 6-7: Minor issues on criteria 4, 5, or 6 (thin approach, slight overlap, modest coverage gap). pass=true.
 - 8-10: Clean plan. pass=true.
 
 Rules:
-- Be STRICT on criteria 1-3. Deictic time in a single question = fail criterion 3 = pass:false.
+- Be STRICT on criteria 1-3 and 7. Deictic time in a single question = fail criterion 3 = pass:false. Full dependency chain = fail criterion 7 = pass:false.
 - Be FORGIVING on criteria 4-6. One slightly thin approach is fine.
 - If pass=false, rewrite_hints MUST be present and concrete (not "improve the questions" — say HOW).
 </scoring_rubric>
@@ -287,7 +310,18 @@ export function researchPrompt(opts: {
   goal: string;
   question: { id: string; title: string; approach: string };
   context: string;
+  /** Outputs of questions this one depends on. Injected as scoping context. */
+  prerequisites?: { id: string; title: string; output: string }[];
 }): string {
+  const prereqBlock =
+    opts.prerequisites && opts.prerequisites.length > 0
+      ? `\n## Prerequisite findings (use these to scope your search)\n\nThese questions ran before yours. Their results define the scope or entities your question operates on — trust them and build on them, do NOT re-derive.\n\n` +
+        opts.prerequisites
+          .map((p) => `### ${p.id}: ${p.title}\n\n${p.output.slice(0, 2500)}`)
+          .join("\n\n---\n\n") +
+        "\n\n"
+      : "";
+
   return `# Research: ${opts.question.id} — ${opts.question.title}
 
 Investigate this ONE question for a larger research task. Other workers handle other questions in parallel.
@@ -295,8 +329,7 @@ Investigate this ONE question for a larger research task. Other workers handle o
 ## Overall goal (context only)
 
 ${opts.goal}
-${opts.context ? `\n## Context\n\n${opts.context}\n` : ""}
-
+${opts.context ? `\n## Context\n\n${opts.context}\n` : ""}${prereqBlock}
 ## Your question
 
 **${opts.question.title}**
@@ -1018,11 +1051,16 @@ export function parsePlan(raw: string): Plan | null {
       const questions = parsed.questions
         .filter((q: unknown) => typeof q === "object" && q !== null && "title" in (q as object))
         .slice(0, 8)
-        .map((q: { id?: string; title: string; approach?: string }, i: number) => ({
-          id: q.id || `Q${i + 1}`,
-          title: String(q.title),
-          approach: String(q.approach || "Search web and cite primary sources."),
-        }));
+        .map((q: { id?: string; title: string; approach?: string; depends_on?: unknown }, i: number) => {
+          const depsRaw = Array.isArray(q.depends_on) ? q.depends_on : [];
+          const depends_on = depsRaw.filter((d: unknown): d is string => typeof d === "string" && d.length > 0);
+          return {
+            id: q.id || `Q${i + 1}`,
+            title: String(q.title),
+            approach: String(q.approach || "Search web and cite primary sources."),
+            ...(depends_on.length > 0 ? { depends_on } : {}),
+          };
+        });
       if (questions.length === 0) continue;
       return {
         sections: sections.length > 0 ? sections : ["TL;DR", "Details", "References"],

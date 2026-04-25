@@ -958,6 +958,44 @@ async function evaluateReportQuality(
   }
 }
 
+// Topologically partition research questions into parallel-safe levels.
+// - Unknown deps (referencing nonexistent IDs) are dropped.
+// - Cycles: remaining questions dumped into one level after MAX_LEVELS iterations.
+// - Result preserves original ordering within each level.
+function computeResearchLevels(
+  questions: import("../../shared/types.ts").ResearchQuestion[]
+): import("../../shared/types.ts").ResearchQuestion[][] {
+  const ids = new Set(questions.map((q) => q.id));
+  const levels: import("../../shared/types.ts").ResearchQuestion[][] = [];
+  const assigned = new Set<string>();
+  const MAX_LEVELS = Math.max(1, questions.length);
+
+  while (assigned.size < questions.length) {
+    const thisLevel = questions.filter((q) => {
+      if (assigned.has(q.id)) return false;
+      const deps = (q.depends_on ?? []).filter((d) => ids.has(d));
+      return deps.every((d) => assigned.has(d));
+    });
+
+    if (thisLevel.length === 0) {
+      // Cycle or unresolvable dep set — dump remaining into a final flat level
+      const remaining = questions.filter((q) => !assigned.has(q.id));
+      if (remaining.length > 0) levels.push(remaining);
+      break;
+    }
+
+    levels.push(thisLevel);
+    thisLevel.forEach((q) => assigned.add(q.id));
+
+    if (levels.length >= MAX_LEVELS) {
+      const remaining = questions.filter((q) => !assigned.has(q.id));
+      if (remaining.length > 0) levels.push(remaining);
+      break;
+    }
+  }
+  return levels;
+}
+
 // Shared plan + research for standard/deep modes (with optional cache for retry)
 async function runPlanAndResearch(
   opts: PipelineOpts,
@@ -1070,81 +1108,70 @@ async function runPlanAndResearch(
 
   const researchQuestions = plan.questions.slice(0, getMaxResearch());
 
-  // ── Research phase (replay cached branches, run missing ones) ──
+  // ── Research phase (DAG-scheduled: respects depends_on) ──
   type ResearchResult = { question: import("../../shared/types.ts").ResearchQuestion; output: string; usage?: TokenUsage };
-  let researchResults: ResearchResult[];
 
+  const levels = computeResearchLevels(researchQuestions);
+  const resultsById = new Map<string, ResearchResult>();
   const cachedResearch = cache?.researchByBranch;
-  const cachedResults: ResearchResult[] = [];
-  const missingBranches: { question: import("../../shared/types.ts").ResearchQuestion; index: number }[] = [];
 
-  for (let i = 0; i < researchQuestions.length; i++) {
-    const q = researchQuestions[i];
-    const hit = cachedResearch?.get(i);
-    if (hit) {
-      replayPhase(turnId, taskId, { seq: 1, branch: i, kind: "research", label: `${q.id}: ${q.title} (cached)`, output: hit.output, usage: hit.usage });
-      usages.push(hit.usage);
-      cachedResults.push({ question: q, output: hit.output, usage: hit.usage });
-    } else {
-      missingBranches.push({ question: q, index: i });
+  // Broadcast plan early (before level-0 runs) so UI can plot all branches.
+  broadcast(taskId, {
+    event: "pipeline.plan_parsed",
+    data: { plan, researchPhaseIds: [] },
+  });
+
+  for (const levelQuestions of levels) {
+    // Separate cached vs missing within this level
+    const levelCached: ResearchResult[] = [];
+    const levelMissing: { question: import("../../shared/types.ts").ResearchQuestion; index: number }[] = [];
+    for (const q of levelQuestions) {
+      const i = researchQuestions.findIndex((r) => r.id === q.id);
+      const hit = cachedResearch?.get(i);
+      if (hit) {
+        replayPhase(turnId, taskId, { seq: 1, branch: i, kind: "research", label: `${q.id}: ${q.title} (cached)`, output: hit.output, usage: hit.usage });
+        usages.push(hit.usage);
+        levelCached.push({ question: q, output: hit.output, usage: hit.usage });
+      } else {
+        levelMissing.push({ question: q, index: i });
+      }
     }
-  }
+    levelCached.forEach((r) => resultsById.set(r.question.id, r));
 
-  if (missingBranches.length > 0) {
-    const newPhases = missingBranches.map(({ question: q, index: i }) =>
+    if (levelMissing.length === 0) continue;
+
+    const newPhases = levelMissing.map(({ question: q, index: i }) =>
       store.addPhase({ turnId, seq: 1, branch: i, kind: "research", label: `${q.id}: ${q.title}`, createdAt: Date.now() })
     );
 
-    broadcast(taskId, {
-      event: "pipeline.plan_parsed",
-      data: { plan, researchPhaseIds: newPhases.map((p) => p.id) },
-    });
-
     const newResults = await Promise.all(
-      missingBranches.map(({ question: q }, i) =>
-        runPhase({ taskId, phaseId: newPhases[i].id, kind: "research", prompt: researchPrompt({ goal, question: q, context }) })
-          .then((r) => ({ question: q, output: r.output, usage: r.usage }))
-      )
+      levelMissing.map(({ question: q }, i) => {
+        const prerequisites = (q.depends_on ?? [])
+          .map((depId) => resultsById.get(depId))
+          .filter((r): r is ResearchResult => Boolean(r))
+          .map((r) => ({ id: r.question.id, title: r.question.title, output: r.output }));
+        return runPhase({
+          taskId,
+          phaseId: newPhases[i].id,
+          kind: "research",
+          prompt: researchPrompt({ goal, question: q, context, prerequisites }),
+        }).then((r) => ({ question: q, output: r.output, usage: r.usage }));
+      })
     );
-    newResults.forEach((r) => usages.push(r.usage));
+    newResults.forEach((r) => {
+      usages.push(r.usage);
+      resultsById.set(r.question.id, r);
+    });
 
     for (const r of newResults) {
       extractPhaseKnowledge(taskId, r.question.title, r.output).catch(() => {});
     }
-
-    // Merge in original order
-    const allResults = [...cachedResults, ...newResults].sort((a, b) => {
-      const ai = researchQuestions.findIndex((q) => q.id === a.question.id);
-      const bi = researchQuestions.findIndex((q) => q.id === b.question.id);
-      return ai - bi;
-    });
-    researchResults = allResults;
-  } else if (cachedResults.length > 0) {
-    // All research was cached
-    researchResults = cachedResults;
-  } else {
-    // No cache at all — original flow
-    const researchPhases: Phase[] = researchQuestions.map((q, i) =>
-      store.addPhase({ turnId, seq: 1, branch: i, kind: "research", label: `${q.id}: ${q.title}`, createdAt: Date.now() })
-    );
-
-    broadcast(taskId, {
-      event: "pipeline.plan_parsed",
-      data: { plan, researchPhaseIds: researchPhases.map((p) => p.id) },
-    });
-
-    researchResults = await Promise.all(
-      researchQuestions.map((q, i) =>
-        runPhase({ taskId, phaseId: researchPhases[i].id, kind: "research", prompt: researchPrompt({ goal, question: q, context }) })
-          .then((r) => ({ question: q, output: r.output, usage: r.usage }))
-      )
-    );
-    researchResults.forEach((r) => usages.push(r.usage));
-
-    for (const r of researchResults) {
-      extractPhaseKnowledge(taskId, r.question.title, r.output).catch(() => {});
-    }
   }
+
+  // Assemble in original plan order
+  const researchResults: ResearchResult[] = researchQuestions
+    .map((q) => resultsById.get(q.id))
+    .filter((r): r is ResearchResult => Boolean(r));
 
   // ── B. Research adequacy gate (deep mode only) ──
   if (opts.mode === "deep") {
