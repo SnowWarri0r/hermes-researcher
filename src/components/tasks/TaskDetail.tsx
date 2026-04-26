@@ -757,6 +757,7 @@ function ReportView({
 }) {
   const [showDiff, setShowDiff] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const stickyRef = useRef(true);
 
   const duration = turn.completedAt && turn.createdAt
     ? ((turn.completedAt - turn.createdAt) / 1000).toFixed(1)
@@ -788,11 +789,34 @@ function ReportView({
   const branchCount = turn.phases.filter((p) => p.kind === "research" && p.status === "completed").length;
   const sourceCount = (displayReport.match(/\]\(https?:\/\//g) || []).length;
 
-  // Auto-scroll to bottom during streaming
+  // Auto-scroll to bottom during streaming — but yield to user scroll.
+  // Walk up from the sentinel to find the scrolling ancestor; track whether
+  // the user is "pinned to bottom"; only auto-follow while pinned.
   useEffect(() => {
-    if (isStreaming && bottomRef.current) {
-      bottomRef.current.scrollIntoView({ behavior: "smooth", block: "end" });
+    const anchor = bottomRef.current;
+    if (!anchor) return;
+    let scrollable: HTMLElement | null = anchor.parentElement;
+    while (scrollable) {
+      const oy = window.getComputedStyle(scrollable).overflowY;
+      if ((oy === "auto" || oy === "scroll") && scrollable.scrollHeight > scrollable.clientHeight) {
+        break;
+      }
+      scrollable = scrollable.parentElement;
     }
+    if (!scrollable) return;
+    function onScroll() {
+      if (!scrollable) return;
+      const dist = scrollable.scrollHeight - scrollable.scrollTop - scrollable.clientHeight;
+      stickyRef.current = dist <= 32;
+    }
+    scrollable.addEventListener("scroll", onScroll, { passive: true });
+    return () => scrollable!.removeEventListener("scroll", onScroll);
+  }, []);
+
+  useEffect(() => {
+    if (!isStreaming) return;
+    if (!stickyRef.current) return;
+    bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
   }, [isStreaming, displayReport]);
 
   return (

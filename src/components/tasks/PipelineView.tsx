@@ -5,6 +5,7 @@ import remarkMath from "remark-math";
 import rehypeKatex from "rehype-katex";
 import type { PhaseDetail, PhaseKind, PhaseStatus } from "../../types";
 import { sanitizeStreamingMarkdown } from "./TaskDetail";
+import { useStickyAutoScroll } from "../../hooks/useStickyAutoScroll";
 
 function normalizeLatex(text: string): string {
   let s = text.replace(/\\\[([\s\S]*?)\\\]/g, (_, inner) => `$$${inner}$$`);
@@ -41,9 +42,29 @@ function statusDot(status: PhaseStatus): string {
   }
 }
 
-function formatDuration(phase: PhaseDetail): string | null {
-  if (!phase.completedAt || !phase.createdAt) return null;
-  return `${((phase.completedAt - phase.createdAt) / 1000).toFixed(1)}s`;
+function useElapsedTick(active: boolean): number | undefined {
+  const [now, setNow] = useState<number | undefined>(active ? Date.now() : undefined);
+  useEffect(() => {
+    if (!active) {
+      setNow(undefined);
+      return;
+    }
+    setNow(Date.now());
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, [active]);
+  return now;
+}
+
+function formatDuration(phase: PhaseDetail, nowMs?: number): string | null {
+  if (!phase.createdAt) return null;
+  const end = phase.completedAt ?? nowMs;
+  if (end === undefined) return null;
+  const sec = (end - phase.createdAt) / 1000;
+  if (sec < 60) return `${sec.toFixed(1)}s`;
+  const m = Math.floor(sec / 60);
+  const s = Math.round(sec % 60);
+  return `${m}m ${s}s`;
 }
 
 function toolCount(phase: PhaseDetail): number {
@@ -137,7 +158,9 @@ function PhaseRow({
   const hasStreaming = Boolean(streamingText);
   const isOpen = open || hasStreaming;
   const meta = PHASE_META[phase.kind];
-  const duration = formatDuration(phase);
+  const isRunning = phase.status === "running";
+  const tickNow = useElapsedTick(isRunning);
+  const duration = formatDuration(phase, tickNow);
   const tools = toolCount(phase);
 
   return (
@@ -165,7 +188,11 @@ function PhaseRow({
           </span>
         )}
         {duration && (
-          <span className="text-[10px] font-mono text-slate-steel shrink-0">
+          <span
+            className={`text-[10px] font-mono shrink-0 ${
+              isRunning ? "text-emerald-signal/80 animate-pulse" : "text-slate-steel"
+            }`}
+          >
             {duration}
           </span>
         )}
@@ -198,19 +225,8 @@ function PhaseBody({ phase, streamingText }: { phase: PhaseDetail; streamingText
   const streamScrollRef = useRef<HTMLDivElement>(null);
   const eventsScrollRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    if (showingStream && streamScrollRef.current) {
-      const el = streamScrollRef.current;
-      el.scrollTop = el.scrollHeight;
-    }
-  }, [displayText, showingStream]);
-
-  useEffect(() => {
-    if (isRunning && eventsScrollRef.current) {
-      const el = eventsScrollRef.current;
-      el.scrollTop = el.scrollHeight;
-    }
-  }, [phase.events.length, isRunning]);
+  useStickyAutoScroll(streamScrollRef, [displayText, showingStream]);
+  useStickyAutoScroll(eventsScrollRef, [phase.events.length, isRunning]);
 
   return (
     <div className="border-t border-charcoal-subtle px-3 py-3 space-y-3">

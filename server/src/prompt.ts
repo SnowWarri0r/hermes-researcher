@@ -119,7 +119,98 @@ AI-generated writing has a distinctive bad smell. Actively resist it:
 - **Concrete over abstract**: "Anthropic 在 4/15 发布 Claude Code Routines，文档允许模型按预设流程连续调用 15 个工具" beats "Anthropic 推进了 agent 工作流的产品化进程".
 - **Don't narrate importance**: "this is important because..." is almost always telling, not showing. Replace with the concrete detail that makes it important.
 - **Tight sentences**: kill every phrase that doesn't add information. "在 2026 年 4 月这个时间节点上" → "4 月".
-- **Opinions with teeth**: when the evidence supports a judgment, state it flatly. "GLM-5.1 的 Terminal-Bench 分数很可能在实际生产环境会打折" beats "GLM-5.1 的评分值得进一步观察".`;
+- **Opinions with teeth**: when the evidence supports a judgment, state it flatly. "GLM-5.1 的 Terminal-Bench 分数很可能在实际生产环境会打折" beats "GLM-5.1 的评分值得进一步观察".
+
+## Voice anchors — copy the cadence of these real passages
+
+The following are VERBATIM excerpts from real analyst publications. Study the cadence; copy the structural moves, not the topics.
+
+### Anchor 1 — Stratechery (Ben Thompson) — direct proposition + concrete anchor
+
+> "International law is ultimately a function of power; might makes right. There are some categories of capabilities — like nuclear weapons — that are sufficiently powerful to fundamentally affect the U.S.'s freedom of action; we can bomb Iran, but we can't North Korea."
+
+What he does:
+- States a flat principle ("might makes right") — no hedging.
+- Anchors immediately in two named, concrete cases (Iran, North Korea).
+- One semicolon-chained sentence carries the entire argument; no "this means that" tail.
+
+### Anchor 2 — Stratechery — binary framing instead of gradient
+
+> "Option 1 is that Anthropic accepts a subservient position relative to the U.S. government, and does not seek to retain ultimate decision-making power about how its models are used... Option 2 is that the U.S. government either destroys Anthropic or removes Amodei."
+
+What he does:
+- Forces a binary, names both poles.
+- Strips moralizing — "destroys Anthropic" is brutal but accurate; he does not soften with "potentially restrict".
+- No "however" / "meanwhile" / "on the other hand" connectives between the options.
+
+### Anchor 3 — 晚点 LatePost — quantified competition without buzzword
+
+> "从绝对数字看，2025 年 12 月他们的 ARR 还是 90 亿美元，但到 2026 年 3 月初就冲到了 190 亿美元，基本上过去两个月增长了 100 亿美元。相比之下，OpenAI 在 2025 年底的 ARR 是 214 亿美元，2026 年 2 月只增长到 250 亿美元。"
+
+What they do:
+- 月份 + 数字 + 公司，全部具体。
+- "冲到""只增长"——动词带判断，但判断是从数字推出来的。
+- 没有"主战场""压过""反超"。读者从 100 亿 vs 36 亿的差距自己得出"压过"，不用作者明说。
+
+### Anchor 4 — 晚点 LatePost — 用具体使用方式代替抽象能力比较
+
+> "现在很多开发者的做法是让 Claude Code 当'主人'负责规划，让 Codex 当'奴隶'负责执行具体的代码读写和 Review。"
+
+What they do:
+- 引一句开发者圈的实际操作（不是"业内认为"）。
+- 隐喻是开发者自己讲出来的（主人/奴隶），作者只转述，不自己造比喻。
+- 比"Claude Code 在规划上压过 Codex"信息量大十倍。
+
+### Anchor 5 — Hacker News top comment voice — first-person + specific caveat
+
+> "I read the Phi-4-mini-reasoning paper. The 71% on GSM8K-Hard is real but it was distilled from GPT-4o, and the README does not publish the RL reward function. To reproduce you need a verifier-grade larger model first; that prerequisite is not in the abstract."
+
+What they do:
+- "I read the paper" — first-person evidence anchor.
+- Specific number (71%) + specific source (paper).
+- Names what's missing (RL reward function not published) and what that costs (need a verifier model first).
+- No framing words: no "interestingly", "notably", "it's worth pointing out".
+
+## Structural moves to copy from the anchors above
+
+When writing a paragraph in this report, pick ONE of these structures (NOT a fifth invented one):
+
+1. **Anchor 1 / 3 cadence**: principle → semicolon → two named concrete cases. Or: number → "相比之下" → another number → implied judgment. NEVER add a "this means" tail.
+2. **Anchor 2 cadence**: binary "Option 1 / Option 2" — name both poles flatly, no soft connector between them.
+3. **Anchor 4 cadence**: quote a real practitioner / thread / commit message verbatim. Use the practitioner's metaphor, not your own.
+4. **Anchor 5 cadence**: first-person evidence ("paper / repo / changelog says X, value is Y, but the missing piece is Z").
+
+If a sentence doesn't fit one of these four shapes, rewrite it.
+
+### Ban list — generic AI-digest cliches (NEVER use, in any language)
+
+These phrases are 100% AI digest filler. Strike them on sight:
+
+- 战场 / 主战场 / 战线 / 较量 / 角力 / 攻防 (war/battle metaphors describing product or research competition)
+- 压过 / 碾压 / 反超 / 弯道超车 / 拉开身位 (vague "X beat Y" with no number)
+- 转向 / 进入下半场 / 进入新阶段 / 迈入新纪元 / 迎来拐点 / 风口 (no event, just direction-claim)
+- 赛道 / 卡位 / 抢跑 / 领跑者 / 头部玩家 / 玩家 (VC/blogspeak for "company")
+- 叙事 / narrative / 范式 / 范式转移 / 路径 (when used to mean "what people are talking about")
+- 生态 / 生态闭环 / 全栈 / 全链路 / 一体化 (when not pointing at concrete components)
+- 抢占 / 押注 / 重金布局 / All in (these tell you nothing about what was actually built)
+- "一边 X 一边 Y" / "既 X 又 Y" 用来强行制造张力
+- "AI 竞争已经从 X 转向 Y" — this entire sentence shape is forbidden. State the specific event instead.
+- English equivalents: "battleground for AI", "AI race", "the next frontier", "the new arms race", "the new gold rush", "the war for X", "X is eating Y", "X is the new Y".
+
+### Concrete BAD / GOOD on AI-news writing
+
+❌ BAD (generic AI-digest cliché — what the user is complaining about):
+> AI 竞争的主战场已经从模型训练转向应用层。Anthropic 在工具调用上压过了 OpenAI，OpenAI 则在 multimodal 维度反超。两家在 agent 这条赛道展开新一轮角力。
+
+Why bad: zero numbers, zero dates, zero source quotes; "战场 / 压过 / 反超 / 赛道 / 角力" 全是 AI 词；没有任何可证伪的判断。
+
+✅ GOOD (specific event + mechanism + sharp distinction):
+> Anthropic 4-26 发布 Claude Opus 4.7，把 tool use 改为模型内部行为：1M context + 一次性给出 ≤15 步的调用计划，工具响应通过 streaming SSE 回灌。同日 OpenAI 把 Function Calling 拆成 Strict Mode（schema 严格匹配）和 Compose Mode（细粒度步骤约束），仍保持每步独立 round-trip。差别落在控制颗粒度：Anthropic 让模型先规划再执行，OpenAI 让开发者在每步介入。这套差别决定了哪家更适合 long-horizon agent，OpenAI 短期内仍占胜算（Function Calling 已稳定 18 个月，工具生态已经按它建好）。
+
+✅ GOOD (Hacker News voice — short, position-taking):
+> Phi-4-mini-reasoning 的卖点是 3.8B 跑到 GSM8K-Hard 71%，比同尺寸 Qwen3-Math 高 7 点。但官方 README 里写明这是用 GPT-4o 蒸馏出来的，没有公开 RL 阶段的 reward function 细节。要复现需要先有一个能可靠当 verifier 的更大模型，这个前置成本是论文没强调的。
+
+These two patterns — "specific event + mechanism + judgment" and "specific number + caveat from primary source" — are the only two valid voices for an analyst report. If a sentence doesn't fit one of them, rewrite it.`;
 }
 
 // ---------------------------------------------------------------------------
@@ -780,6 +871,8 @@ List at most 6 concrete issues. Each under 25 words. Prioritize structural/voice
 6. Missing so-what / implications?
 7. Printed scaffolding: any visible "**IN —**", "**OUT —**", "**Connection IN/OUT**", "**Section claim:**", "**小结论：**", "Signal vs noise" subheading/table? These are rule scaffolds that should be invisible — flag every occurrence, the reviser will rewrite them as natural prose.
 8. Per-section formula: do most/all sections share the same opening template (e.g. "**X — Y.** 小结论：...")? If yes, flag it — the model has stamped sections from a template instead of writing.
+9. **Generic AI-digest cliches** — flag any of: 战场 / 主战场 / 战线 / 较量 / 角力 / 压过 / 碾压 / 反超 / 弯道超车 / 转向 / 拐点 / 风口 / 赛道 / 卡位 / 头部玩家 / 玩家 / 叙事 / 范式 / 生态闭环 / 全栈 / 押注 / 重金布局 / All in. English: "battleground", "AI race", "the next frontier", "arms race", "X is eating Y", "X is the new Y". These are content-marketing voice, not analyst voice. Quote each offending sentence so revise can rewrite as a specific event + mechanism statement.
+10. **Empty competition framing** — sentences shaped like "AI 竞争从 X 转向 Y", "X 在 Y 上压过了 Z" without naming a specific date / version / number / source. Flag the entire sentence; the reviser must replace with: specific event, what changed, by what mechanism, with at least one anchor (date / version / quote).
 `;
 }
 
@@ -837,6 +930,8 @@ List at most 8 concrete issues, each under 25 words. Prioritize structural/voice
 6. Missing so-what / implications?
 7. **Printed scaffolding (visible labels)**: any line, bullet, italic, or bold matching \`IN[:：]\` / \`OUT[:：]\` / \`Connection (IN|OUT)\` / \`Section claim\` / \`Sub-claim\` / \`小结论\` / \`Signal vs noise\` / \`信号.*噪音\` rendered as visible text? Flag each one.
 8. **Per-section formula stamping**: do most/all content sections share the same opening template (e.g. \`*IN：anchor*\` then \`小结论：…\`)? If yes, flag.
+9. **Generic AI-digest cliches**: 战场 / 主战场 / 角力 / 压过 / 碾压 / 反超 / 转向 / 拐点 / 赛道 / 头部玩家 / 叙事 / 范式 / 押注 / battleground / AI race / arms race / "X is the new Y" — quote each offending sentence.
+10. **Empty competition framing**: sentences like "X 从 Y 转向 Z" / "A 在 B 上压过了 C" with no specific date, version, or number. The reviser must rewrite as a concrete event + mechanism + judgment.
 `;
 }
 
@@ -1073,6 +1168,8 @@ ${opts.goal}
 - **Visible scaffold labels** — any line, bullet, italic, bold, or heading rendering: \`IN[:：]\`, \`OUT[:：]\`, \`Connection (IN|OUT)\`, \`Section claim\`, \`Sub-claim\`, \`Sub claim\`, \`子论点\`, \`小结论\`, \`Signal vs noise\`, \`信号 vs 噪音\`, \`Key facts\`, \`Length target\`. These are internal scaffolds; their presence is a leak.
 - **Per-section formula stamping** — most/all content sections share the same template-style opening (e.g. all start with \`*IN：…*\` / \`小结论：…\`).
 - **Standalone "Signal vs noise" subsection or table** — even without the literal label, an obvious tabular dichotomy inserted in every section is a tell.
+- **Generic AI-digest cliche infection** — three or more occurrences of the cliche set: 战场 / 主战场 / 角力 / 压过 / 碾压 / 反超 / 弯道超车 / 转向 / 拐点 / 风口 / 赛道 / 头部玩家 / 玩家 / 叙事 / 范式 / 生态闭环 / 押注 / 重金布局 / battleground / AI race / arms race / "X is the new Y" / "X is eating Y". Two is borderline; three is a hard fail.
+- **Empty competition framing** — at least one sentence shaped "X 从 Y 转向 Z" / "A 在 B 上压过了 C" / "AI 竞争已经迈入..." with no specific date / version / number / source attached.
 
 If pass fails on style, list the offending pattern in \`issues\` so the editor can strip it.
 

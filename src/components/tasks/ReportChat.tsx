@@ -1,10 +1,11 @@
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
 import rehypeKatex from "rehype-katex";
 import type { ChatMessage, TaskEvent } from "../../types";
 import { useTaskStore } from "../../store/tasks";
+import { useStickyAutoScroll } from "../../hooks/useStickyAutoScroll";
 
 function normalizeLatex(text: string): string {
   let s = text.replace(/\\\[([\s\S]*?)\\\]/g, (_, inner) => `$$${inner}$$`);
@@ -26,12 +27,8 @@ export function ReportChat() {
   const [collapsed, setCollapsed] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  // Auto-scroll to bottom on message update
-  useEffect(() => {
-    if (!collapsed && scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-    }
-  }, [messages, streaming, collapsed]);
+  // Auto-scroll to bottom on update — but only if user hasn't scrolled away.
+  useStickyAutoScroll(scrollRef, [messages, streaming, collapsed]);
 
   async function handleSend(e: React.FormEvent) {
     e.preventDefault();
