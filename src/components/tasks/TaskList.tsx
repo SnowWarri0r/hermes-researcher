@@ -2,19 +2,13 @@ import { useState, useEffect, useRef } from "react";
 import { useTaskStore } from "../../store/tasks";
 import { TaskCard } from "./TaskCard";
 
-const STATUS_FILTERS = [
-  { value: "", label: "All" },
-  { value: "running", label: "Running" },
-  { value: "completed", label: "Done" },
-  { value: "failed", label: "Failed" },
-];
-
 export function TaskList() {
   const tasks = useTaskStore((s) => s.tasks);
   const clearCompleted = useTaskStore((s) => s.clearCompleted);
   const setSearch = useTaskStore((s) => s.setSearch);
-  const setFilterStatus = useTaskStore((s) => s.setFilterStatus);
   const filterStatus = useTaskStore((s) => s.filterStatus);
+  const storeCounts = useTaskStore((s) => s.counts);
+  const hasCompleted = storeCounts.completed + storeCounts.failed > 0;
 
   const [localQuery, setLocalQuery] = useState("");
   const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined);
@@ -27,22 +21,10 @@ export function TaskList() {
     return () => clearTimeout(debounceRef.current);
   }, [localQuery, setSearch]);
 
-  const storeCounts = useTaskStore((s) => s.counts);
-  const hasCompleted = storeCounts.completed + storeCounts.failed > 0;
-
-  // Filter pill counts come from the server-side unfiltered totals so they
-  // stay correct regardless of which filter is active.
-  const counts: Record<string, number> = {
-    "": storeCounts.all,
-    running: storeCounts.running,
-    completed: storeCounts.completed,
-    failed: storeCounts.failed,
-  };
-
   return (
     <div>
-      {/* Search + filter bar */}
-      <div className="flex items-center gap-3 mb-4">
+      {/* Search bar */}
+      <div className="flex items-center gap-3 mb-3">
         <div className="relative flex-1">
           <input
             type="text"
@@ -53,39 +35,12 @@ export function TaskList() {
           />
           <svg
             className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-steel"
-            width="14"
-            height="14"
-            viewBox="0 0 16 16"
-            fill="none"
+            width="14" height="14" viewBox="0 0 16 16" fill="none"
           >
             <circle cx="7" cy="7" r="5" stroke="currentColor" strokeWidth="1.5" />
             <path d="M11 11l3.5 3.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
           </svg>
         </div>
-
-        <div className="flex gap-1">
-          {STATUS_FILTERS.map((f) => {
-            const active = filterStatus === f.value;
-            const n = counts[f.value] ?? 0;
-            return (
-              <button
-                key={f.value}
-                onClick={() => setFilterStatus(f.value)}
-                className={`px-2.5 py-1.5 rounded-pill text-[11px] font-medium border transition-colors flex items-center gap-1.5 ${
-                  active
-                    ? "bg-emerald-dim border-emerald-signal/50 text-emerald-signal"
-                    : "bg-carbon border-charcoal text-slate-steel hover:text-parchment hover:border-charcoal-light"
-                }`}
-              >
-                <span>{f.label}</span>
-                <span className={`text-[10px] font-mono ${active ? "text-emerald-signal/80" : "text-slate-steel/70"}`}>
-                  {n}
-                </span>
-              </button>
-            );
-          })}
-        </div>
-
         {hasCompleted && !filterStatus && (
           <button
             onClick={clearCompleted}
@@ -111,11 +66,21 @@ export function TaskList() {
           </div>
         </div>
       ) : (
-        <div className="space-y-2">
-          {tasks.map((task) => (
-            <TaskCard key={task.id} task={task} />
-          ))}
-        </div>
+        <>
+          {/* Column header strip */}
+          <div className="hidden md:grid grid-cols-[1fr_120px_90px_110px_60px] gap-4 px-4 pb-2 text-[10px] text-slate-steel font-mono tracking-[0.18em]">
+            <span>GOAL</span>
+            <span>PIPELINE</span>
+            <span>DURATION</span>
+            <span>USAGE</span>
+            <span>MODE</span>
+          </div>
+          <div className="space-y-2">
+            {tasks.map((task) => (
+              <TaskCard key={task.id} task={task} />
+            ))}
+          </div>
+        </>
       )}
     </div>
   );

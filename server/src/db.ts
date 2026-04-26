@@ -697,6 +697,55 @@ export const store = {
     }));
   },
 
+  /** KNN neighbours of a stored knowledge entry, excluding itself. */
+  searchKnowledgeRelated(
+    id: number,
+    limit = 6,
+  ): { id: number; topic: string; taskId: string; score: number }[] {
+    try {
+      // sqlite-vec MATCH expects a vec_f32 literal, not a subquery — so we
+      // fetch the entry's embedding first, then run the KNN with it.
+      const seed = db
+        .prepare(`SELECT embedding FROM knowledge WHERE id = ?`)
+        .get(id) as { embedding: string | null } | undefined;
+      if (!seed?.embedding) return [];
+
+      // Vec MATCH must include itself in the candidates pool, so request
+      // limit+1 and filter the seed id out afterwards.
+      // Note: vec0 requires `k = N` (parameter ok) or a literal LIMIT — a
+      // parameterized `LIMIT ?` is rejected. `k = ?` is the safe form.
+      const rows = db
+        .prepare(
+          `SELECT
+            k.id, k.task_id, k.topic,
+            v.distance
+          FROM knowledge_vec v
+          JOIN knowledge k ON k.id = v.rowid
+          WHERE v.embedding MATCH vec_f32(?)
+            AND k = ?
+          ORDER BY v.distance`,
+        )
+        .all(seed.embedding, limit + 1) as {
+        id: number;
+        task_id: string;
+        topic: string;
+        distance: number;
+      }[];
+
+      return rows
+        .filter((r) => r.id !== id)
+        .slice(0, limit)
+        .map((r) => ({
+          id: r.id,
+          taskId: r.task_id,
+          topic: r.topic,
+          score: 1 - r.distance,
+        }));
+    } catch {
+      return [];
+    }
+  },
+
   searchKnowledgeByVector(
     queryEmbedding: number[],
     limit = 5,
@@ -706,15 +755,15 @@ export const store = {
       // vec0 KNN query: MATCH returns top-K by distance (cosine distance)
       const rows = db
         .prepare(
+          // vec0 requires `k = N` or literal LIMIT; parameterized LIMIT is rejected.
           `SELECT
             k.task_id, k.topic, k.summary, k.sources,
             v.distance
           FROM knowledge_vec v
           JOIN knowledge k ON k.id = v.rowid
           WHERE v.embedding MATCH vec_f32(?)
-            AND k > 0
-          ORDER BY v.distance
-          LIMIT ?`
+            AND k = ?
+          ORDER BY v.distance`
         )
         .all(JSON.stringify(queryEmbedding), limit) as {
         task_id: string;

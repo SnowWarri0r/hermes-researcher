@@ -32,6 +32,7 @@ import {
   parseThesis,
   parsePlan,
   isMinorRefinement,
+  stripScaffoldLabels,
 } from "./prompt.ts";
 import type {
   Phase,
@@ -446,7 +447,7 @@ async function runQuickMode(
     }),
   });
   usages.push(result.usage);
-  return result.output;
+  return stripScaffoldLabels(result.output);
 }
 
 // ── Minor followup: critique + revise only (skip plan/research) ─────────────
@@ -494,7 +495,7 @@ async function runMinorFollowup(
     }),
   });
   usages.push(reviseResult.usage);
-  return reviseResult.output;
+  return stripScaffoldLabels(reviseResult.output);
 }
 
 // ── Standard: plan → research → thesis → outline → draft → critique → revise ──
@@ -606,7 +607,25 @@ async function runStandardMode(
     ],
   });
   usages.push(reviseResult.usage);
-  return reviseResult.output;
+
+  // ── Style gate (seq=7) — cheap copy-edit pass, mirrors deep mode's editor.
+  // Strips visible scaffold labels and tightens AI voice without restructuring.
+  const styleGatePhase = store.addPhase({
+    turnId: opts.turnId, seq: 7, branch: 0, kind: "revise", label: "Copy edit",
+    createdAt: Date.now(),
+  });
+  const styleGateResult = await runPhaseLite({
+    taskId: opts.taskId, phaseId: styleGatePhase.id, kind: "critique",
+    prompt: editorPrompt({ goal: opts.goal, language: opts.language, thesisPresent: thesis !== null }),
+    messages: [
+      { role: "user", content: "Here is the revised report." },
+      { role: "assistant", content: reviseResult.output },
+      { role: "user", content: editorPrompt({ goal: opts.goal, language: opts.language, thesisPresent: thesis !== null }) },
+    ],
+  });
+  usages.push(styleGateResult.usage);
+
+  return stripScaffoldLabels(styleGateResult.output || reviseResult.output);
 }
 
 // ── Deep: plan → research → thesis → outline → draft → critique → revise → editor ─
@@ -770,7 +789,7 @@ async function runDeepMode(
   });
   usages.push(editorResult.usage);
 
-  return editorResult.output || finalRevision;
+  return stripScaffoldLabels(editorResult.output || finalRevision);
 }
 
 // ---------------------------------------------------------------------------

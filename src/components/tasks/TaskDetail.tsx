@@ -404,7 +404,7 @@ export function TaskDetail() {
               )}
 
               {isLatestTurn && (
-                <form onSubmit={handleFollowup} className="mt-8 bg-carbon border border-charcoal rounded-lg p-4">
+                <form onSubmit={handleFollowup} className="mt-8 bg-carbon border border-charcoal rounded-lg p-4 max-w-[760px]">
                   <div className="text-xs font-medium text-slate-steel uppercase tracking-wider mb-2">Refine this report</div>
                   <textarea
                     value={followupMessage}
@@ -430,7 +430,7 @@ export function TaskDetail() {
               )}
               {/* Chains list */}
               {chains.length > 0 && (
-                <div className="mt-4 bg-carbon border border-charcoal rounded-lg p-4">
+                <div className="mt-4 bg-carbon border border-charcoal rounded-lg p-4 max-w-[760px]">
                   <div className="text-xs font-medium text-slate-steel uppercase tracking-wider mb-2">
                     Chains ({chains.length})
                   </div>
@@ -476,7 +476,7 @@ export function TaskDetail() {
 
               {/* Chain next task */}
               {isLatestTurn && canFollowup && task.result && (
-                <div className="mt-4 bg-carbon border border-charcoal rounded-lg p-4">
+                <div className="mt-4 bg-carbon border border-charcoal rounded-lg p-4 max-w-[760px]">
                   <div className="text-xs font-medium text-slate-steel uppercase tracking-wider mb-2">
                     Chain next task
                   </div>
@@ -568,14 +568,15 @@ function normalizeLatexDelimiters(text: string): string {
   let s = text.replace(/\\\[([\s\S]*?)\\\]/g, (_, inner) => `$$${inner}$$`);
   // Inline math: \(...\) → $...$
   s = s.replace(/\\\(([\s\S]*?)\\\)/g, (_, inner) => `$${inner}$`);
-  // Escape currency $ (e.g. US$2,499, A$500) so remark-math doesn't pair
-  // them as inline math. A `$` preceded by a letter is always currency.
-  s = s.replace(/([A-Za-z])\$(?=\d)/g, "$1\\$");
+  // Escape currency $ so remark-math doesn't pair them as inline math.
+  // Catches `US$2,499`, ` $700`, `约 $479.95`, `$209` — any `$` followed
+  // by an optional space + digit, that isn't already backslash-escaped.
+  s = s.replace(/(?<!\\)\$(?=\s?\d)/g, "\\$$");
   return s;
 }
 
 export function escapeCurrencyDollars(text: string): string {
-  return text.replace(/([A-Za-z])\$(?=\d)/g, "$1\\$");
+  return text.replace(/(?<!\\)\$(?=\s?\d)/g, "\\$$");
 }
 
 /**
