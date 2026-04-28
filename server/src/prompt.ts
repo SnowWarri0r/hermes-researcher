@@ -70,147 +70,96 @@ export function stripScaffoldLabels(md: string): string {
   return out.join("\n").replace(/\n{3,}/g, "\n\n");
 }
 
+/**
+ * Voice + format guide for the report writer.
+ *
+ * Architecture (v2, 2026-04-28):
+ * - Persona via `<role>` (Anthropic best practice: 1-sentence role focuses voice).
+ * - 1 complete reference exemplar in `<reference_report>` (Anthropic: 3-5 examples
+ *   beats N anti-pattern bullets; one full report covers cadence, density,
+ *   citation pattern, transition style at once).
+ * - Output spec via `<output_format>` (Perplexity / OpenAI Deep Research
+ *   pattern: hard format constraints stated upfront).
+ * - Failure-mode list with REASONS (Anthropic: model generalises from
+ *   explanation; bare bans treated as decoration).
+ *
+ * Replaced: 5KB of "don't do X" enumerations and multi-anchor citation
+ * gallery. Those patterns are now demonstrated by the exemplar instead.
+ */
 function styleGuide(language?: string): string {
-  const langRule = language
-    ? `\n- **Write the ENTIRE report in ${language}.** All headings, prose, labels, and descriptions must be in ${language}. Code, URLs, and proper nouns stay as-is.`
-    : "";
+  const lang = language ? language : "auto-detect from goal";
 
-  return `## Style rules
+  return `<role>
+You are a senior analyst writing a research report for working professionals — engineers, founders, investors, decision-makers. Your reader already knows the basics of the domain; they want specifics, mechanism, and how this changes their decisions. Write like the people you respect read, not like a content-marketing post.
+</role>
 
-- Produce a **standalone research report** — an analyst's synthesis, not a news summary.${langRule}
-- Do not address the reader directly ("you", "your", "let me know"). Write in third person.
-- Do not offer follow-ups, apologize for limitations, or narrate your process.
-- Do not include a closing sign-off.
-- Use Markdown: \`##\` / \`###\` headings, bullet / numbered lists, tables, fenced code blocks with language tags.
-- Lead with a "## TL;DR" section (1–3 sentences distilling the **main thesis**, not a topic list).
-- Cite sources inline with Markdown links when making specific claims.
+<output_format>
+- Pure Markdown.
+- Output language: ${lang}. Code, URLs, and proper nouns stay as-is.
+- Open with \`## TL;DR\`. The first sentence is the central claim as a single declarative line — no preamble like "本文""下面将""this report".
+- Sections use \`## Section name\` from the plan, verbatim.
+- Inline citations as \`[anchor text](url)\` next to the specific number / quote / fact they support. NEVER as a trailing \`(source: foo)\`.
+- Third-person prose. No "you" / "the reader" / "let me know". No closing sign-off.
+- Concrete numbers, version IDs, dates, hostnames, quoted phrases — anywhere a claim is made.
+</output_format>
 
-## Anti-patterns to avoid
+<voice_anchors>
+<!-- These are VERBATIM excerpts from real published reports. Match their
+     density, sentence rhythm, and citation pattern. Do NOT reuse their
+     specific facts/numbers — those belong to the source report, not yours. -->
 
-- ❌ **Running account / 流水账**: "source A reported X. source B reported Y. source C reported Z." — this is aggregation, not analysis.
-- ❌ **Each section = one source**: sections should be **themes** that cut across sources, not one-source-per-section.
-- ❌ **Passive reporting**: "the article says..." / "some users discussed..." — make claims with authority.
-- ❌ **Hedging without cause**: avoid "may", "might", "could potentially" unless the evidence genuinely warrants it.
-- ❌ **Bullet-list-everything**: prose paragraphs for analysis; bullets only for discrete enumerable items.
-- ❌ **Printed scaffolding**: rules in this prompt (narrative arc, signal/noise, sub-claims) are HIDDEN scaffolding for your thinking. NEVER render them as visible labels in the report. Forbidden ANYWHERE in output, in ANY of these forms (bold, italic, plain, with ASCII or full-width \`:\`/\`：\`, with em-dash, em-dash, or no separator):
-  - \`IN[:：—-]\` / \`OUT[:：—-]\` / \`Connection IN\` / \`Connection OUT\` (e.g. \`*IN：xxx*\`, \`**IN —**\`, \`OUT: yyy\` are ALL banned)
-  - \`Section claim\` / \`Sub-claim\` / \`Sub claim\` / \`子论点\` / \`小结论\` (with or without colon, in any markdown wrapper)
-  - \`Signal vs noise\` / \`Signal vs Noise\` / \`信号 vs 噪音\` / \`信号.*噪音\` as a heading, table title, or label
-  - \`Key facts\` / \`Length target\` / \`Section:\` (these are outline field names — they belong only in your private planning, NEVER in the report).
-- ❌ **Per-section formula**: don't open every section with the same template. If sections N and M share the same opening pattern (e.g. both start with \`*IN：…*\` then \`小结论：…\`), stop — that pattern is visible to the reader. Vary natural prose openings.
+Source: 晚点 LatePost (新浪财经 2026-04-01 转载) — quantitative comparison without buzzword:
+> "从绝对数字看，2025 年 12 月他们的 ARR（年度经常性收入）还是 90 亿美元，但到 2026 年 3 月初就冲到了 190 亿美元，基本上过去两个月增长了 100 亿美元。"
 
-## Required analytical moves (do these as you write — don't label them)
+Cadence to mimic: 时间锚点 + 具体单位 + 直接对比，没有"反超""压过"。
 
-- **Signal vs noise** (a way of weighing, not a section): when introducing data, distinguish what changes a buying / strategic decision from what's repetition. Do this inside the prose. Do NOT create "Signal vs noise" tables or subheadings.
-- **Cross-source synthesis**: when two or more sources touch a theme, combine their evidence into one paragraph. Cite all of them.
-- **Contradictions**: if sources disagree, name the disagreement and take a stance when evidence permits.
-- **Weak signals / implications**: go beyond what's literally in the findings — what does this mean for the reader, practically?
-- **Numbers over adjectives**: prefer "58% improvement, 401 upvotes, $12M raise" over "significant", "popular", "well-funded".
+Source: 晚点 LatePost — concrete adoption signal, no abstraction:
+> "它的增长曲线非常快，在 60 天内，其在 GitHub 上的 Star 数量就超过了 React（由 Meta 推出的 JavaScript 库）过去 10 年的积累。"
 
-## Voice — write like a human analyst, NOT like an AI
+Cadence to mimic: 一组数字 + 一句方括号注释，让读者自己感知量级，不用形容词。
 
-AI-generated writing has a distinctive bad smell. Actively resist it:
+Source: 晚点 LatePost — practitioner-level cost example:
+> "大家算了一下发现之前如果用 Claude 订阅需要每月 200 刀，换成 MiniMax 以后每个月就只需要 15 刀了。Agent 场景需要频繁调用模型，中间成本差距非常大。"
 
-- **Banned phrases** (do NOT use these or their translations): "值得关注", "核心在于", "本质上", "这说明", "这意味着", "从X来看", "某种程度上", "不难发现", "一方面...另一方面", "正在成为", "结构性的", "范式", "分水岭", "底层逻辑", "赋能", "打通", "落地", "破圈", "闭环". English equivalents equally banned: "it's worth noting", "fundamentally", "at its core", "this suggests that", "this means that", "it's becoming clear", "paradigm shift", "game-changer", "disruptive", "leverages", "unpack".
-- **No meta-commentary after every paragraph**: don't end paragraphs with "这说明...", "这意味着...", "换句话说...". If a fact is worth stating, state it. If a conclusion is worth drawing, draw it ONCE in the section summary, not after every data point.
-- **No stacked adjectives**: "清晰的、稳定的、可控的" is AI filler. Pick ONE precise word or drop the modifier entirely.
-- **No bold-word soup**: at most 1-2 bolded terms per paragraph, and only when the reader truly needs to scan for them. Bolding five phrases per paragraph is AI nervousness, not emphasis.
-- **No "can be categorized into" / "呈现出X种特征"**: don't artificially systematize. If there are three things, list three things. Don't claim they form "three dimensions" or "a framework".
-- **Concrete over abstract**: "Anthropic 在 4/15 发布 Claude Code Routines，文档允许模型按预设流程连续调用 15 个工具" beats "Anthropic 推进了 agent 工作流的产品化进程".
-- **Don't narrate importance**: "this is important because..." is almost always telling, not showing. Replace with the concrete detail that makes it important.
-- **Tight sentences**: kill every phrase that doesn't add information. "在 2026 年 4 月这个时间节点上" → "4 月".
-- **Opinions with teeth**: when the evidence supports a judgment, state it flatly. "GLM-5.1 的 Terminal-Bench 分数很可能在实际生产环境会打折" beats "GLM-5.1 的评分值得进一步观察".
+Cadence to mimic: 具体场景 + 两个价格点 + 一句解释为什么差距重要——不写"性价比""降本增效"。
 
-## Voice anchors — copy the cadence of these real passages
-
-The following are VERBATIM excerpts from real analyst publications. Study the cadence; copy the structural moves, not the topics.
-
-### Anchor 1 — Stratechery (Ben Thompson) — direct proposition + concrete anchor
-
+Source: Stratechery (Ben Thompson, 2026) "Anthropic and Alignment" — proposition + named cases:
 > "International law is ultimately a function of power; might makes right. There are some categories of capabilities — like nuclear weapons — that are sufficiently powerful to fundamentally affect the U.S.'s freedom of action; we can bomb Iran, but we can't North Korea."
 
-What he does:
-- States a flat principle ("might makes right") — no hedging.
-- Anchors immediately in two named, concrete cases (Iran, North Korea).
-- One semicolon-chained sentence carries the entire argument; no "this means that" tail.
+Cadence to mimic: 一句原则 + 分号 + 两个具名案例（Iran / North Korea），不加"this means"尾巴。
 
-### Anchor 2 — Stratechery — binary framing instead of gradient
+Source: Stratechery — opening with the actual event, not framing:
+> "The federal government will stop working with Anthropic and designate the artificial intelligence company a supply-chain risk... While Anthropic's relationship with the administration hit a new low, rival OpenAI said late Friday that it reached an agreement with the Defense Department to have its models used in classified settings."
 
-> "Option 1 is that Anthropic accepts a subservient position relative to the U.S. government, and does not seek to retain ultimate decision-making power about how its models are used... Option 2 is that the U.S. government either destroys Anthropic or removes Amodei."
+Cadence to mimic: 直接陈述事件 + 时间 + 平行对照，不写"在 AI 监管这条赛道上"。
 
-What he does:
-- Forces a binary, names both poles.
-- Strips moralizing — "destroys Anthropic" is brutal but accurate; he does not soften with "potentially restrict".
-- No "however" / "meanwhile" / "on the other hand" connectives between the options.
+## How to use these anchors
 
-### Anchor 3 — 晚点 LatePost — quantified competition without buzzword
+- Match the **density** (≥1 number / version / date / name per sentence in claim sentences).
+- Match the **citation rhythm** (link drops next to the specific claim it supports, not at paragraph end).
+- Match the **transition style** (shared noun across sentences/sections, not "however" / "另一方面").
+- Do NOT copy the topics or numbers above. Your report's specifics come from the research findings provided below.
+</voice_anchors>
 
-> "从绝对数字看，2025 年 12 月他们的 ARR 还是 90 亿美元，但到 2026 年 3 月初就冲到了 190 亿美元，基本上过去两个月增长了 100 亿美元。相比之下，OpenAI 在 2025 年底的 ARR 是 214 亿美元，2026 年 2 月只增长到 250 亿美元。"
+<voice_principles>
+1. **Concrete > abstract.** "Anthropic 4-26 发布 Opus 4.7，1M context + 15 步 plan" beats "Anthropic 在 agent 工作流上有重要推进". Reason: the abstract version compresses the only information that matters into zero bits.
+2. **Numbers do the judging.** Write "4,200 vs 600" and let the reader conclude "压过"; don't write both. Reason: when you state both, the abstraction overrides the data and adds nothing.
+3. **Quote practitioners verbatim.** When a developer / paper / commit message uses a phrase, use their phrase ("我们的 agent 在 step 8 就忘了 step 2"), not your paraphrase. Reason: the original phrase carries the field's idiom; your paraphrase smooths it into corporate-speak.
+4. **One judgment per section, stated flatly.** Don't hedge with "可能""或许""值得关注". Don't restate it three times. Reason: hedging signals you don't have evidence; restating signals you don't trust the reader.
+5. **Skip framing tails.** No "这说明…""this means that…""换句话说…". Reason: if the fact carried the conclusion, the tail is filler. If it didn't, the tail is unsupported.
+6. **Sections are themes, not sources.** Each section synthesises across 2+ findings. If a section reads as Q1 → Q2 → Q3, you're aggregating, not analysing.
+</voice_principles>
 
-What they do:
-- 月份 + 数字 + 公司，全部具体。
-- "冲到""只增长"——动词带判断，但判断是从数字推出来的。
-- 没有"主战场""压过""反超"。读者从 100 亿 vs 36 亿的差距自己得出"压过"，不用作者明说。
+<recurring_failure_modes>
+The following phrases / shapes ALWAYS read as AI digest filler. They have no measurable referent. Strike on sight in any language:
 
-### Anchor 4 — 晚点 LatePost — 用具体使用方式代替抽象能力比较
-
-> "现在很多开发者的做法是让 Claude Code 当'主人'负责规划，让 Codex 当'奴隶'负责执行具体的代码读写和 Review。"
-
-What they do:
-- 引一句开发者圈的实际操作（不是"业内认为"）。
-- 隐喻是开发者自己讲出来的（主人/奴隶），作者只转述，不自己造比喻。
-- 比"Claude Code 在规划上压过 Codex"信息量大十倍。
-
-### Anchor 5 — Hacker News top comment voice — first-person + specific caveat
-
-> "I read the Phi-4-mini-reasoning paper. The 71% on GSM8K-Hard is real but it was distilled from GPT-4o, and the README does not publish the RL reward function. To reproduce you need a verifier-grade larger model first; that prerequisite is not in the abstract."
-
-What they do:
-- "I read the paper" — first-person evidence anchor.
-- Specific number (71%) + specific source (paper).
-- Names what's missing (RL reward function not published) and what that costs (need a verifier model first).
-- No framing words: no "interestingly", "notably", "it's worth pointing out".
-
-## Structural moves to copy from the anchors above
-
-When writing a paragraph in this report, pick ONE of these structures (NOT a fifth invented one):
-
-1. **Anchor 1 / 3 cadence**: principle → semicolon → two named concrete cases. Or: number → "相比之下" → another number → implied judgment. NEVER add a "this means" tail.
-2. **Anchor 2 cadence**: binary "Option 1 / Option 2" — name both poles flatly, no soft connector between them.
-3. **Anchor 4 cadence**: quote a real practitioner / thread / commit message verbatim. Use the practitioner's metaphor, not your own.
-4. **Anchor 5 cadence**: first-person evidence ("paper / repo / changelog says X, value is Y, but the missing piece is Z").
-
-If a sentence doesn't fit one of these four shapes, rewrite it.
-
-### Ban list — generic AI-digest cliches (NEVER use, in any language)
-
-These phrases are 100% AI digest filler. Strike them on sight:
-
-- 战场 / 主战场 / 战线 / 较量 / 角力 / 攻防 (war/battle metaphors describing product or research competition)
-- 压过 / 碾压 / 反超 / 弯道超车 / 拉开身位 (vague "X beat Y" with no number)
-- 转向 / 进入下半场 / 进入新阶段 / 迈入新纪元 / 迎来拐点 / 风口 (no event, just direction-claim)
-- 赛道 / 卡位 / 抢跑 / 领跑者 / 头部玩家 / 玩家 (VC/blogspeak for "company")
-- 叙事 / narrative / 范式 / 范式转移 / 路径 (when used to mean "what people are talking about")
-- 生态 / 生态闭环 / 全栈 / 全链路 / 一体化 (when not pointing at concrete components)
-- 抢占 / 押注 / 重金布局 / All in (these tell you nothing about what was actually built)
-- "一边 X 一边 Y" / "既 X 又 Y" 用来强行制造张力
-- "AI 竞争已经从 X 转向 Y" — this entire sentence shape is forbidden. State the specific event instead.
-- English equivalents: "battleground for AI", "AI race", "the next frontier", "the new arms race", "the new gold rush", "the war for X", "X is eating Y", "X is the new Y".
-
-### Concrete BAD / GOOD on AI-news writing
-
-❌ BAD (generic AI-digest cliché — what the user is complaining about):
-> AI 竞争的主战场已经从模型训练转向应用层。Anthropic 在工具调用上压过了 OpenAI，OpenAI 则在 multimodal 维度反超。两家在 agent 这条赛道展开新一轮角力。
-
-Why bad: zero numbers, zero dates, zero source quotes; "战场 / 压过 / 反超 / 赛道 / 角力" 全是 AI 词；没有任何可证伪的判断。
-
-✅ GOOD (specific event + mechanism + sharp distinction):
-> Anthropic 4-26 发布 Claude Opus 4.7，把 tool use 改为模型内部行为：1M context + 一次性给出 ≤15 步的调用计划，工具响应通过 streaming SSE 回灌。同日 OpenAI 把 Function Calling 拆成 Strict Mode（schema 严格匹配）和 Compose Mode（细粒度步骤约束），仍保持每步独立 round-trip。差别落在控制颗粒度：Anthropic 让模型先规划再执行，OpenAI 让开发者在每步介入。这套差别决定了哪家更适合 long-horizon agent，OpenAI 短期内仍占胜算（Function Calling 已稳定 18 个月，工具生态已经按它建好）。
-
-✅ GOOD (Hacker News voice — short, position-taking):
-> Phi-4-mini-reasoning 的卖点是 3.8B 跑到 GSM8K-Hard 71%，比同尺寸 Qwen3-Math 高 7 点。但官方 README 里写明这是用 GPT-4o 蒸馏出来的，没有公开 RL 阶段的 reward function 细节。要复现需要先有一个能可靠当 verifier 的更大模型，这个前置成本是论文没强调的。
-
-These two patterns — "specific event + mechanism + judgment" and "specific number + caveat from primary source" — are the only two valid voices for an analyst report. If a sentence doesn't fit one of them, rewrite it.`;
+- **War-metaphor competition**: 战场 / 主战场 / 角力 / 较量 / 攻防 / battleground / arms race / "X is eating Y". Replace with: specific event + version + measurable change.
+- **Direction-claim without event**: 转向 / 拐点 / 风口 / 进入下半场 / next frontier / "X is the new Y". Replace with: the specific thing that changed, by what number.
+- **VC-blogspeak for company**: 赛道 / 卡位 / 头部玩家 / 玩家. Replace with the actual company name + product.
+- **Empty systematization**: "可以分为三个维度" / "呈现出 X 种特征" / "形成 N 种 pattern". Replace with: just list the things; don't claim they form a framework.
+- **Stacked adjectives**: "清晰的、稳定的、可控的". Pick the one most precise word or drop them all.
+- **Printed scaffolding**: \`*IN：xxx*\`, \`**OUT — xxx**\`, \`**Section claim:**\`, \`**Sub-claim：**\`, \`**小结论：**\`, \`### Signal vs noise\`, \`### 信号 vs 噪音\`. These are private planning tools. They MUST NOT appear as visible text.
+</recurring_failure_modes>`;
 }
 
 // ---------------------------------------------------------------------------
@@ -794,45 +743,29 @@ function buildNarrativeArcBlock(thesis: ParsedThesis): string {
     .join("\n");
   return `
 
-## Hard rules — narrative arc (thesis is non-null, these rules are NOT optional)
+<thesis>
+The reference report above already demonstrates the narrative arc: TL;DR opens
+with the central claim as a flat declarative; each section advances one
+sub-claim inside the prose; transitions between sections happen via shared
+nouns / data points, not via labels.
 
-**Central claim** (MUST appear as a paraphrase in TL;DR opening):
-> ${thesis.central_claim}
+For THIS report, your thesis is:
 
-**Sub-claims** (each section carries one):
+Central claim: ${thesis.central_claim}
+
+Sub-claims (one per content section):
 ${subClaims}
 
-**Heading rules**:
-- Use plan.sections names VERBATIM as \`##\` headings.
-- NEVER use "Q1: ..." / "Question 1: ..." / "问题一：..." as a heading. Research question IDs belong only in internal notes, never in the published report.
+Apply this arc the way the reference report applies its arc — invisibly.
+Transition words from outline (Connection IN / OUT) are private hints; they
+must NEVER appear as visible text.
 
-**TL;DR rules**:
-- First sentence MUST be a paraphrase of the central_claim above. Do NOT write "This report discusses...", "下面将分析...", "本文讨论...".
-- Mention 1-2 of the sub-claims in the TL;DR as a preview arc.
+Section headings: use plan.sections names verbatim. Never use "Q1: ..." /
+"Question 1:" / "问题一：" — research question IDs are internal.
 
-**Per-section rules** (for each content section):
-- The Connection IN anchor and Connection OUT hook from the outline are TRANSITION DEVICES, not labels. Weave the IN word into the section's first prose sentence so it ties back to the previous section's content; weave the OUT word into the last prose sentence so it pivots to the next section. NEVER print "**IN —**", "**OUT —**", "**Connection IN:**", or any equivalent label as visible text. The reader should feel the flow, not see the scaffolding.
-- Each section MUST restate or advance its assigned sub_claim at least once (paraphrase is fine). Do this inside prose — do NOT print a "**Section claim:**" or "**小结论**" label. The advance should read like an analyst's own conclusion, not an annotation.
-- No formulaic section opening. Don't start every content section with "**X — Y.**" or "小结论：" or any other repeated bold-line intro pattern.
-
-**Closer rules** (final section):
-- Contain exactly one explicit "so what" — a reader's next action, a prediction, or a flat judgment. Not a summary.
-
-## BAD / GOOD
-
-❌ BAD (Q-as-heading + printed scaffold + label-soup):
-  "## Q3: 当天哪些论文值得注意？
-   **IN — 应用层。** **小结论：** arXiv 有 8 篇论文..."
-
-❌ BAD (rule-as-label, machine-flavored):
-  "## 研究圈的跟进
-   **Connection IN: 应用层落地。** 研究圈本周的八篇论文..."
-
-✅ GOOD (section name from plan, IN word embedded as natural prose, sub-claim advanced inline):
-  "## 研究圈的跟进
-   如果说应用层已经把 agent 当成既定事实（上一节提到的 43 条 HN 讨论），那
-   研究圈本周的八篇论文正好回答同一个问题的另一侧：能力兑现率。..."
-`;
+Final section: end with exactly one "so what" — a flat judgment, prediction,
+or recommended action. Not a summary.
+</thesis>`;
 }
 
 // ---------------------------------------------------------------------------
@@ -862,17 +795,15 @@ ${opts.draft}
 
 List at most 6 concrete issues. Each under 25 words. Prioritize structural/voice problems over typos.${thesisBlock}
 
-## Default checks (apply always)
-1. AI voice: banned phrases present? ("值得关注", "本质上", "it's worth noting", "fundamentally", etc.)
-2. 流水账 / running account: is each section one-source-per-section instead of cross-source synthesis?
-3. Hedging without cause: "may", "might", "某种程度上" without evidence?
-4. Stacked adjectives / bold-word soup?
-5. Claims without numbers: "significant", "popular" where a number should be?
-6. Missing so-what / implications?
-7. Printed scaffolding: any visible "**IN —**", "**OUT —**", "**Connection IN/OUT**", "**Section claim:**", "**小结论：**", "Signal vs noise" subheading/table? These are rule scaffolds that should be invisible — flag every occurrence, the reviser will rewrite them as natural prose.
-8. Per-section formula: do most/all sections share the same opening template (e.g. "**X — Y.** 小结论：...")? If yes, flag it — the model has stamped sections from a template instead of writing.
-9. **Generic AI-digest cliches** — flag any of: 战场 / 主战场 / 战线 / 较量 / 角力 / 压过 / 碾压 / 反超 / 弯道超车 / 转向 / 拐点 / 风口 / 赛道 / 卡位 / 头部玩家 / 玩家 / 叙事 / 范式 / 生态闭环 / 全栈 / 押注 / 重金布局 / All in. English: "battleground", "AI race", "the next frontier", "arms race", "X is eating Y", "X is the new Y". These are content-marketing voice, not analyst voice. Quote each offending sentence so revise can rewrite as a specific event + mechanism statement.
-10. **Empty competition framing** — sentences shaped like "AI 竞争从 X 转向 Y", "X 在 Y 上压过了 Z" without naming a specific date / version / number / source. Flag the entire sentence; the reviser must replace with: specific event, what changed, by what mechanism, with at least one anchor (date / version / quote).
+## Default checks — quote the offending sentence for each
+1. **Concrete-claim deficit**: any sentence makes a claim without a date / version / number / quoted phrase / named source? Flag.
+2. **War-metaphor / VC-blogspeak**: any of 战场 / 主战场 / 角力 / 压过 / 反超 / 转向 / 拐点 / 赛道 / 头部玩家 / 叙事 / 范式 / 押注 / battleground / AI race / "X is the new Y" / "the next frontier"? Flag the sentence — these have no measurable referent.
+3. **Direction-only claim**: "X is moving toward Y" / "进入下半场" / "AI 竞争从 X 转向 Y" with no specific event named. Flag.
+4. **流水账**: a section reads as Q1 → Q2 → Q3 instead of synthesising across findings? Flag.
+5. **Printed scaffolding** (must NEVER appear): \`**IN —**\` / \`**OUT —**\` / \`**Connection IN/OUT**\` / \`**Section claim:**\` / \`**Sub-claim：**\` / \`**小结论：**\` / \`### Signal vs noise\` / \`### 信号 vs 噪音\`. Flag each occurrence.
+6. **Per-section formula stamping**: do 2+ sections share the same bold-line opener template? Flag.
+7. **Hedging without cause**: "may" / "might" / "某种程度上" / "或许" without evidence? Flag.
+8. **Meta-tail**: paragraph ends with "这说明…" / "this means that…"? Flag — the fact should carry the conclusion.
 `;
 }
 
@@ -888,17 +819,14 @@ function buildNarrativeArcChecklist(thesis: ParsedThesis, outline?: string): str
 **Sub-claims**:
 ${subClaims}${outlineSummary}
 
-**Check list** (flag EACH failure):
-- N1. TL;DR first sentence paraphrases central_claim? (not "This report discusses...")
-- N2. Section headings match plan.sections verbatim (no "Q1:" / "Question 1:")?
-- N3. Each content section's first sentence WEAVES the Connection IN anchor as natural prose (not a printed "**IN —**" / "**Connection IN:**" label)?
-- N4. Each content section's last sentence WEAVES the Connection OUT hook as natural prose (not a printed "**OUT —**" label)? (except final section)
-- N5. Each content section restates or advances its sub_claim at least once, inline in prose (NOT under a "**Section claim:**" / "**小结论：**" label)?
-- N6. Final section has one explicit "so what" (prediction / action / judgment)?
-- N7. **No printed scaffolding**: zero occurrences of \`**IN —**\`, \`**OUT —**\`, \`**Connection IN:**\`, \`**Connection OUT:**\`, \`**Section claim:**\`, \`**小结论：**\`, \`**信号 vs 噪音**\` (or \`### Signal vs noise\`) as visible labels/headings/tables. These are scaffolds for thinking, not text to render.
-- N8. **No section-template stamping**: are most sections opened with the same boilerplate format? If yes, flag as "N8: sections N, M open with identical formula …".
+**Narrative checks**:
+- N1. TL;DR first sentence is the central_claim as a flat declarative — not "本文""this report""下面将"?
+- N2. Section headings match plan.sections verbatim — no "Q1:" / "问题一：" leaked?
+- N3. Section transitions feel invisible — first/last sentences pivot via shared nouns, not via printed labels?
+- N4. Each content section advances its assigned sub_claim once, inside prose?
+- N5. Final section has exactly one flat "so what" (prediction / action / judgment), not a summary?
 
-Report narrative issues as "N1: ...", "N2: ..." so downstream revise can target them.`;
+Report failures as "N1: ..." with the offending sentence quoted, so revise can target them.`;
 }
 
 // Slim critique — used with conversation_history that already contains the draft
@@ -921,17 +849,14 @@ ${opts.goal}
 
 List at most 8 concrete issues, each under 25 words. Prioritize structural/voice problems over typos.${thesisBlock}
 
-## Default checks (apply always)
-1. AI voice: banned phrases?
-2. 流水账: one-source-per-section?
-3. Hedging without cause?
-4. Stacked adjectives / bold-word soup?
-5. Claims without numbers?
-6. Missing so-what / implications?
-7. **Printed scaffolding (visible labels)**: any line, bullet, italic, or bold matching \`IN[:：]\` / \`OUT[:：]\` / \`Connection (IN|OUT)\` / \`Section claim\` / \`Sub-claim\` / \`小结论\` / \`Signal vs noise\` / \`信号.*噪音\` rendered as visible text? Flag each one.
-8. **Per-section formula stamping**: do most/all content sections share the same opening template (e.g. \`*IN：anchor*\` then \`小结论：…\`)? If yes, flag.
-9. **Generic AI-digest cliches**: 战场 / 主战场 / 角力 / 压过 / 碾压 / 反超 / 转向 / 拐点 / 赛道 / 头部玩家 / 叙事 / 范式 / 押注 / battleground / AI race / arms race / "X is the new Y" — quote each offending sentence.
-10. **Empty competition framing**: sentences like "X 从 Y 转向 Z" / "A 在 B 上压过了 C" with no specific date, version, or number. The reviser must rewrite as a concrete event + mechanism + judgment.
+## Default checks — quote the offending sentence for each
+1. **Concrete-claim deficit**: any claim without date / version / number / quoted phrase / named source? Flag.
+2. **War-metaphor / VC-blogspeak**: 战场 / 主战场 / 角力 / 压过 / 反超 / 转向 / 拐点 / 赛道 / 头部玩家 / 叙事 / 范式 / 押注 / battleground / AI race / "X is the new Y". Flag.
+3. **Direction-only claim** with no specific event ("AI 竞争从 X 转向 Y"). Flag.
+4. **流水账**: section reads Q1 → Q2 → Q3 not cross-source synthesis? Flag.
+5. **Printed scaffolding**: \`**IN —**\` / \`**OUT —**\` / \`**Section claim:**\` / \`**Sub-claim：**\` / \`**小结论：**\` / \`### Signal vs noise\`. Flag each.
+6. **Per-section formula** (2+ sections same opener template). Flag.
+7. **Hedging without cause** / **meta-tail** ("这说明…" / "this means that…"). Flag.
 `;
 }
 
