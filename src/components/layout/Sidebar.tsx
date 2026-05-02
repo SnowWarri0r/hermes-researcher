@@ -1,10 +1,50 @@
 import { NavLink } from "react-router";
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useTaskStore } from "../../store/tasks";
+
+interface NavCounts {
+  knowledge: number;
+  schedules: number;
+  templates: number;
+}
+
+function useNavCounts(): NavCounts {
+  const [counts, setCounts] = useState<NavCounts>({ knowledge: 0, schedules: 0, templates: 0 });
+
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      try {
+        const [k, s, t] = await Promise.all([
+          fetch("/api/knowledge").then((r) => r.json()),
+          fetch("/api/schedules").then((r) => r.json()),
+          fetch("/api/templates").then((r) => r.json()),
+        ]);
+        if (cancelled) return;
+        setCounts({
+          knowledge: Array.isArray(k) ? k.length : 0,
+          schedules: Array.isArray(s) ? s.filter((x: { enabled?: boolean }) => x.enabled !== false).length : 0,
+          templates: Array.isArray(t) ? t.length : 0,
+        });
+      } catch {
+        /* ignore */
+      }
+    }
+    load();
+    const interval = setInterval(load, 30_000);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, []);
+
+  return counts;
+}
 
 export function Sidebar({ collapsed = false }: { collapsed?: boolean }) {
   const { tasks, connected, counts } = useTaskStore();
   const running = counts.running;
+  const navCounts = useNavCounts();
 
   const todayTokens = useMemo(() => {
     const now = new Date();
@@ -18,7 +58,7 @@ export function Sidebar({ collapsed = false }: { collapsed?: boolean }) {
     return sum;
   }, [tasks]);
 
-  if (collapsed) return <CollapsedSidebar running={running} connected={connected} />;
+  if (collapsed) return <CollapsedSidebar running={running} connected={connected} navCounts={navCounts} />;
 
   return (
     <aside className="w-[260px] h-full bg-carbon border-r border-charcoal flex flex-col shrink-0 relative z-[2]">
@@ -66,6 +106,7 @@ export function Sidebar({ collapsed = false }: { collapsed?: boolean }) {
         <SidebarLink
           to="/knowledge"
           label="Knowledge"
+          meta={navCounts.knowledge > 0 ? navCounts.knowledge : undefined}
           icon={
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
               <path
@@ -81,6 +122,7 @@ export function Sidebar({ collapsed = false }: { collapsed?: boolean }) {
         <SidebarLink
           to="/schedules"
           label="Schedules"
+          meta={navCounts.schedules > 0 ? navCounts.schedules : undefined}
           icon={
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
               <circle cx="8" cy="8" r="5.5" stroke="currentColor" strokeWidth="1.5" />
@@ -91,6 +133,7 @@ export function Sidebar({ collapsed = false }: { collapsed?: boolean }) {
         <SidebarLink
           to="/templates"
           label="Templates"
+          meta={navCounts.templates > 0 ? navCounts.templates : undefined}
           icon={
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
               <rect x="2" y="2" width="5" height="5" rx="1" stroke="currentColor" strokeWidth="1.2" />
@@ -142,8 +185,25 @@ export function Sidebar({ collapsed = false }: { collapsed?: boolean }) {
   );
 }
 
-function CollapsedSidebar({ running, connected }: { running: number; connected: boolean }) {
-  const items: { to: string; label: string; icon: React.ReactNode; badge?: number }[] = [
+function CollapsedSidebar({
+  running,
+  connected,
+  navCounts,
+}: {
+  running: number;
+  connected: boolean;
+  navCounts: NavCounts;
+}) {
+  // Collapsed mode: only show running-task badge as a small dot. Static
+  // counts (knowledge / schedules / templates) are too noisy in 32px cells —
+  // available via tooltip + the expanded sidebar.
+  void navCounts;
+  const items: {
+    to: string;
+    label: string;
+    icon: React.ReactNode;
+    badge?: number;
+  }[] = [
     {
       to: "/",
       label: "Tasks",
@@ -282,11 +342,13 @@ function SidebarLink({
   to,
   label,
   badge,
+  meta,
   icon,
 }: {
   to: string;
   label: string;
   badge?: number;
+  meta?: number;
   icon: React.ReactNode;
 }) {
   return (
@@ -303,11 +365,13 @@ function SidebarLink({
     >
       <span className="shrink-0">{icon}</span>
       <span className="flex-1 text-left">{label}</span>
-      {badge !== undefined && (
-        <span className="bg-agent-active/20 text-agent-thinking text-xs font-medium px-1.5 py-0.5 rounded-pill">
+      {badge !== undefined ? (
+        <span className="bg-emerald-signal text-abyss text-[10px] font-mono font-bold px-1.5 py-0 rounded-full">
           {badge}
         </span>
-      )}
+      ) : meta !== undefined ? (
+        <span className="text-[11px] font-mono text-slate-steel">{meta}</span>
+      ) : null}
     </NavLink>
   );
 }
