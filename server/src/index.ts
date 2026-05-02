@@ -445,6 +445,12 @@ app.delete("/api/knowledge/:id", (c) => {
   return c.json({ ok: true });
 });
 
+app.get("/api/knowledge/:id/related", (c) => {
+  const id = Number(c.req.param("id"));
+  const limit = Number(c.req.query("limit") ?? 6);
+  return c.json(store.searchKnowledgeRelated(id, limit));
+});
+
 // ---------------------------------------------------------------------------
 // Task chains
 // ---------------------------------------------------------------------------

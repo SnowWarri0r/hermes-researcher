@@ -1,6 +1,75 @@
 import { jsonrepair } from "jsonrepair";
 import type { Plan, ParsedThesis } from "../../shared/types.ts";
 
+/**
+ * Final-stage deterministic sanitizer. Strips scaffolding labels that
+ * leaked from outline/narrative-arc instructions into the report prose.
+ *
+ * Conservative — only acts on:
+ *  1. Lines that are ENTIRELY a scaffold label wrapper (italic/bold/plain),
+ *     such as `*IN：可控交付。*` or `**OUT — 真实采用。**` → remove the line.
+ *  2. Lines that BEGIN with a scaffold label followed by content,
+ *     such as `**Section claim:** xxx` → strip the label, keep the content.
+ *  3. Markdown headings whose entire text is `Signal vs noise` / `信号 vs 噪音` /
+ *     `信号 vs. 噪音` / `Signal vs. Noise` → remove the heading line.
+ *
+ * Returns the cleaned markdown. Idempotent.
+ */
+export function stripScaffoldLabels(md: string): string {
+  // Scaffold label keywords. Matches with optional ASCII or full-width colons,
+  // optional em/en-dash separators, with or without italic/bold wrappers.
+  const lines = md.split("\n");
+  const out: string[] = [];
+
+  // (1) Isolated label-only lines — full-line matchers.
+  // Examples that match:
+  //   *IN：可控交付。*
+  //   **OUT — 真实采用信号。**
+  //   *Connection IN: 价格边界。*
+  //   **Sub-claim**：xxx
+  //   **小结论：** xxx
+  //   *小结论：xxx*
+  //   *Section claim: xxx*
+  //   *Signal vs noise*
+  const labelOnlyLine =
+    /^\s*[*_]{1,2}\s*(?:IN|OUT|Connection\s+IN|Connection\s+OUT|Section\s+claim|Sub[-\s]?claim|子论点|小结论|Signal\s+vs\.?\s+noise|信号\s*vs\.?\s*噪音)[\s*_]*[:：—\-]?[\s\S]*?[*_]{1,2}\s*$/i;
+
+  // (2) Heading lines whose whole title is a forbidden label.
+  const labelHeading =
+    /^\s*#{1,6}\s+(?:Signal\s+vs\.?\s+noise|信号\s*vs\.?\s*噪音|Sub[-\s]?claim|Section\s+claim|Connection\s+(?:IN|OUT))\s*$/i;
+
+  // (3) Inline-prefix labels — line starts with a label, then real content follows.
+  //   "**Section claim:** xxx" → "xxx"   (colon inside wrapper)
+  //   "**Sub-claim**: xxx" → "xxx"        (colon outside wrapper)
+  //   "**IN：可控交付**。读者……" → "读者……" (label+content inside wrapper)
+  // We rebuild the line by stripping the leading label wrapper.
+  const labelKeyword =
+    "(?:IN|OUT|Connection\\s+IN|Connection\\s+OUT|Section\\s+claim|Sub[-\\s]?claim|子论点|小结论)";
+  const prefixLabel = new RegExp(
+    `^([\\s>*\\-+]*)(?:` +
+      // Form A: **Label: content**  or  **Label — content**
+      `[*_]{1,2}\\s*${labelKeyword}[\\s*_]*[:：—\\-][^*_\\n]*[*_]{1,2}` +
+      `|` +
+      // Form B: **Label**: content   or  **Label**：content
+      `[*_]{1,2}\\s*${labelKeyword}\\s*[*_]{1,2}\\s*[:：—\\-]` +
+      `|` +
+      // Form C: bare Label: content (no markdown wrapper, line start only)
+      `${labelKeyword}\\s*[:：]` +
+      `)\\s*`,
+    "i",
+  );
+
+  for (const line of lines) {
+    if (labelOnlyLine.test(line)) continue;
+    if (labelHeading.test(line)) continue;
+    const stripped = line.replace(prefixLabel, "$1");
+    out.push(stripped);
+  }
+
+  // Collapse 3+ consecutive blank lines created by removals.
+  return out.join("\n").replace(/\n{3,}/g, "\n\n");
+}
+
 function styleGuide(language?: string): string {
   const langRule = language
     ? `\n- **Write the ENTIRE report in ${language}.** All headings, prose, labels, and descriptions must be in ${language}. Code, URLs, and proper nouns stay as-is.`
@@ -23,10 +92,16 @@ function styleGuide(language?: string): string {
 - ❌ **Passive reporting**: "the article says..." / "some users discussed..." — make claims with authority.
 - ❌ **Hedging without cause**: avoid "may", "might", "could potentially" unless the evidence genuinely warrants it.
 - ❌ **Bullet-list-everything**: prose paragraphs for analysis; bullets only for discrete enumerable items.
+- ❌ **Printed scaffolding**: rules in this prompt (narrative arc, signal/noise, sub-claims) are HIDDEN scaffolding for your thinking. NEVER render them as visible labels in the report. Forbidden ANYWHERE in output, in ANY of these forms (bold, italic, plain, with ASCII or full-width \`:\`/\`：\`, with em-dash, em-dash, or no separator):
+  - \`IN[:：—-]\` / \`OUT[:：—-]\` / \`Connection IN\` / \`Connection OUT\` (e.g. \`*IN：xxx*\`, \`**IN —**\`, \`OUT: yyy\` are ALL banned)
+  - \`Section claim\` / \`Sub-claim\` / \`Sub claim\` / \`子论点\` / \`小结论\` (with or without colon, in any markdown wrapper)
+  - \`Signal vs noise\` / \`Signal vs Noise\` / \`信号 vs 噪音\` / \`信号.*噪音\` as a heading, table title, or label
+  - \`Key facts\` / \`Length target\` / \`Section:\` (these are outline field names — they belong only in your private planning, NEVER in the report).
+- ❌ **Per-section formula**: don't open every section with the same template. If sections N and M share the same opening pattern (e.g. both start with \`*IN：…*\` then \`小结论：…\`), stop — that pattern is visible to the reader. Vary natural prose openings.
 
-## Required analytical moves
+## Required analytical moves (do these as you write — don't label them)
 
-- **Signal vs noise**: explicitly call out what's new/important vs hype/repetition.
+- **Signal vs noise** (a way of weighing, not a section): when introducing data, distinguish what changes a buying / strategic decision from what's repetition. Do this inside the prose. Do NOT create "Signal vs noise" tables or subheadings.
 - **Cross-source synthesis**: when two or more sources touch a theme, combine their evidence into one paragraph. Cite all of them.
 - **Contradictions**: if sources disagree, name the disagreement and take a stance when evidence permits.
 - **Weak signals / implications**: go beyond what's literally in the findings — what does this mean for the reader, practically?
@@ -589,7 +664,18 @@ export function draftPrompt(opts: {
   const sectionsList = opts.plan.sections.map((s, i) => `${i + 1}. ${s}`).join("\n");
 
   const outlineBlock = opts.outline
-    ? `\n\n## Outline (follow this skeleton verbatim)\n\n${opts.outline}\n\n`
+    ? `\n\n## Internal outline — DO NOT COPY OR QUOTE
+
+This is your private planning sheet. Use it to decide structure, transitions, and key facts.
+NEVER copy field names ("Section claim", "Connection IN", "Connection OUT", "Key facts", "Length target", "Sub-claim", "小结论", "Signal vs noise") into the published report.
+NEVER print the IN/OUT anchor words as a labeled bullet line — they MUST appear inside natural prose sentences in the section's first/last sentences.
+The reader must never see this scaffold.
+
+\`\`\`
+${opts.outline}
+\`\`\`
+
+`
     : "";
 
   // Narrative-arc block: only when thesis is present AND non-null (approved path).
@@ -634,20 +720,24 @@ ${subClaims}
 - Mention 1-2 of the sub-claims in the TL;DR as a preview arc.
 
 **Per-section rules** (for each content section):
-- First sentence MUST include the Connection IN anchor word from the outline.
-- Last sentence MUST include the Connection OUT hook word (except the final section).
-- Each section MUST restate or advance its assigned sub_claim at least once (paraphrase is fine).
+- The Connection IN anchor and Connection OUT hook from the outline are TRANSITION DEVICES, not labels. Weave the IN word into the section's first prose sentence so it ties back to the previous section's content; weave the OUT word into the last prose sentence so it pivots to the next section. NEVER print "**IN —**", "**OUT —**", "**Connection IN:**", or any equivalent label as visible text. The reader should feel the flow, not see the scaffolding.
+- Each section MUST restate or advance its assigned sub_claim at least once (paraphrase is fine). Do this inside prose — do NOT print a "**Section claim:**" or "**小结论**" label. The advance should read like an analyst's own conclusion, not an annotation.
+- No formulaic section opening. Don't start every content section with "**X — Y.**" or "小结论：" or any other repeated bold-line intro pattern.
 
 **Closer rules** (final section):
 - Contain exactly one explicit "so what" — a reader's next action, a prediction, or a flat judgment. Not a summary.
 
 ## BAD / GOOD
 
-❌ BAD:
+❌ BAD (Q-as-heading + printed scaffold + label-soup):
   "## Q3: 当天哪些论文值得注意？
-   arXiv 上有 8 篇论文..."
+   **IN — 应用层。** **小结论：** arXiv 有 8 篇论文..."
 
-✅ GOOD (section name from plan, connection IN from outline, sub-claim advanced):
+❌ BAD (rule-as-label, machine-flavored):
+  "## 研究圈的跟进
+   **Connection IN: 应用层落地。** 研究圈本周的八篇论文..."
+
+✅ GOOD (section name from plan, IN word embedded as natural prose, sub-claim advanced inline):
   "## 研究圈的跟进
    如果说应用层已经把 agent 当成既定事实（上一节提到的 43 条 HN 讨论），那
    研究圈本周的八篇论文正好回答同一个问题的另一侧：能力兑现率。..."
@@ -688,6 +778,8 @@ List at most 6 concrete issues. Each under 25 words. Prioritize structural/voice
 4. Stacked adjectives / bold-word soup?
 5. Claims without numbers: "significant", "popular" where a number should be?
 6. Missing so-what / implications?
+7. Printed scaffolding: any visible "**IN —**", "**OUT —**", "**Connection IN/OUT**", "**Section claim:**", "**小结论：**", "Signal vs noise" subheading/table? These are rule scaffolds that should be invisible — flag every occurrence, the reviser will rewrite them as natural prose.
+8. Per-section formula: do most/all sections share the same opening template (e.g. "**X — Y.** 小结论：...")? If yes, flag it — the model has stamped sections from a template instead of writing.
 `;
 }
 
@@ -706,10 +798,12 @@ ${subClaims}${outlineSummary}
 **Check list** (flag EACH failure):
 - N1. TL;DR first sentence paraphrases central_claim? (not "This report discusses...")
 - N2. Section headings match plan.sections verbatim (no "Q1:" / "Question 1:")?
-- N3. Each content section's first sentence contains the Connection IN anchor from outline?
-- N4. Each content section's last sentence contains the Connection OUT hook (except final)?
-- N5. Each content section restates or advances its sub_claim at least once?
+- N3. Each content section's first sentence WEAVES the Connection IN anchor as natural prose (not a printed "**IN —**" / "**Connection IN:**" label)?
+- N4. Each content section's last sentence WEAVES the Connection OUT hook as natural prose (not a printed "**OUT —**" label)? (except final section)
+- N5. Each content section restates or advances its sub_claim at least once, inline in prose (NOT under a "**Section claim:**" / "**小结论：**" label)?
 - N6. Final section has one explicit "so what" (prediction / action / judgment)?
+- N7. **No printed scaffolding**: zero occurrences of \`**IN —**\`, \`**OUT —**\`, \`**Connection IN:**\`, \`**Connection OUT:**\`, \`**Section claim:**\`, \`**小结论：**\`, \`**信号 vs 噪音**\` (or \`### Signal vs noise\`) as visible labels/headings/tables. These are scaffolds for thinking, not text to render.
+- N8. **No section-template stamping**: are most sections opened with the same boilerplate format? If yes, flag as "N8: sections N, M open with identical formula …".
 
 Report narrative issues as "N1: ...", "N2: ..." so downstream revise can target them.`;
 }
@@ -732,7 +826,7 @@ ${opts.goal}
 
 ## Output
 
-List at most 6 concrete issues, each under 25 words. Prioritize structural/voice problems over typos.${thesisBlock}
+List at most 8 concrete issues, each under 25 words. Prioritize structural/voice problems over typos.${thesisBlock}
 
 ## Default checks (apply always)
 1. AI voice: banned phrases?
@@ -741,6 +835,8 @@ List at most 6 concrete issues, each under 25 words. Prioritize structural/voice
 4. Stacked adjectives / bold-word soup?
 5. Claims without numbers?
 6. Missing so-what / implications?
+7. **Printed scaffolding (visible labels)**: any line, bullet, italic, or bold matching \`IN[:：]\` / \`OUT[:：]\` / \`Connection (IN|OUT)\` / \`Section claim\` / \`Sub-claim\` / \`小结论\` / \`Signal vs noise\` / \`信号.*噪音\` rendered as visible text? Flag each one.
+8. **Per-section formula stamping**: do most/all content sections share the same opening template (e.g. \`*IN：anchor*\` then \`小结论：…\`)? If yes, flag.
 `;
 }
 
@@ -800,7 +896,8 @@ export function editorPrompt(opts: {
 ## Do NOT disturb (narrative arc must survive the edit)
 - Do NOT change section heading text.
 - Do NOT remove or rephrase the TL;DR opening sentence.
-- Do NOT remove the Connection IN/OUT anchor words in section first/last sentences.
+- Keep the IN/OUT anchor words present in each section's first/last sentences (they make the flow work). But these should already be embedded in prose — if the writer left visible labels like \`**IN —**\` / \`**OUT —**\` / \`**Connection IN:**\` / \`**Section claim:**\` / \`**小结论：**\`, REMOVE the label and weave the anchor word naturally into the surrounding sentence.
+- Strike standalone "Signal vs noise" subheadings or tables — fold them back into the section's prose.
 - Do NOT remove the final "so what" statement.
 Your job is language, not structure.`
     : "";
@@ -847,11 +944,13 @@ export function reviseInstructionPrompt(opts: {
 Your revision MUST preserve:
 - TL;DR opening that paraphrases the central_claim
 - Section headings matching plan.sections verbatim
-- Connection IN/OUT anchor words in each section
-- Sub-claim restatement per section
+- The IN/OUT anchor words EMBEDDED in each section's first/last sentences (transitions). DO NOT print "**IN —**", "**OUT —**", "**Connection IN:**", or any label as visible text — weave the anchor word into prose.
+- Sub-claim advance per section, also as natural prose (no "**Section claim:**", "**小结论**" labels).
 - Final "so what"
 
-If the critique flagged narrative issues (tagged N1–N6), fix THOSE specifically — do not rewrite sections that are already working.`
+If the previous draft contained visible scaffold labels (printed "IN —", "OUT —", "Connection IN/OUT", "Section claim", "小结论", "信号 vs 噪音" subheadings/tables), STRIP them and rewrite that sentence as natural prose. Keep the analytical content, lose the label.
+
+If the critique flagged narrative issues (tagged N1–N6 or scaffold issues), fix THOSE specifically — do not rewrite sections that are already working.`
     : "";
 
   return `# Revise your draft based on the critique above
@@ -957,6 +1056,12 @@ If ANY of these is true, set score ≤ 3 and pass=false:
 `
     : "";
 
+  // Inspect head and tail so late-section style defects don't get lost in the slice.
+  const reportSample =
+    opts.report.length > 12000
+      ? `${opts.report.slice(0, 8000)}\n\n[…middle truncated…]\n\n${opts.report.slice(-3500)}`
+      : opts.report;
+
   return `# Report quality evaluation
 
 Score this research report on a 1-10 scale.
@@ -964,8 +1069,15 @@ Score this research report on a 1-10 scale.
 ## Goal
 ${opts.goal}
 
+## Hard-fail style checks (any → score ≤ 3, pass=false)
+- **Visible scaffold labels** — any line, bullet, italic, bold, or heading rendering: \`IN[:：]\`, \`OUT[:：]\`, \`Connection (IN|OUT)\`, \`Section claim\`, \`Sub-claim\`, \`Sub claim\`, \`子论点\`, \`小结论\`, \`Signal vs noise\`, \`信号 vs 噪音\`, \`Key facts\`, \`Length target\`. These are internal scaffolds; their presence is a leak.
+- **Per-section formula stamping** — most/all content sections share the same template-style opening (e.g. all start with \`*IN：…*\` / \`小结论：…\`).
+- **Standalone "Signal vs noise" subsection or table** — even without the literal label, an obvious tabular dichotomy inserted in every section is a tell.
+
+If pass fails on style, list the offending pattern in \`issues\` so the editor can strip it.
+
 ## Report
-${opts.report.slice(0, 8000)}
+${reportSample}
 ${thesisBlock}
 ## Output (strict JSON)
 \`\`\`json

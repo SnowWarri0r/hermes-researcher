@@ -9,8 +9,8 @@ import { sanitizeStreamingMarkdown } from "./TaskDetail";
 function normalizeLatex(text: string): string {
   let s = text.replace(/\\\[([\s\S]*?)\\\]/g, (_, inner) => `$$${inner}$$`);
   s = s.replace(/\\\(([\s\S]*?)\\\)/g, (_, inner) => `$${inner}$`);
-  // Escape currency $ (e.g. US$2,499) so remark-math doesn't swallow them as inline math
-  s = s.replace(/([A-Za-z])\$(?=\d)/g, "$1\\$");
+  // Escape currency $ (any `$` followed by optional space + digit, not pre-escaped)
+  s = s.replace(/(?<!\\)\$(?=\s?\d)/g, "\\$$");
   return s;
 }
 
