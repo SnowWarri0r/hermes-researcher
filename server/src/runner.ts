@@ -620,7 +620,7 @@ async function runStandardMode(
   // ── Style gate (seq=8) — cheap copy-edit pass, mirrors deep mode's editor.
   // Strips visible scaffold labels and tightens AI voice without restructuring.
   const styleGatePhase = store.addPhase({
-    turnId: opts.turnId, seq: 8, branch: 0, kind: "revise", label: "Copy edit",
+    turnId: opts.turnId, seq: 8, branch: 0, kind: "revise", label: "Polish",
     createdAt: Date.now(),
   });
   const styleGateResult = await runPhaseLite({
@@ -798,7 +798,7 @@ async function runDeepMode(
   }
 
   // ── Editor pass (seqOffset + 1) ──
-  const editorPhase = store.addPhase({ turnId: opts.turnId, seq: seqOffset + 1, branch: 0, kind: "revise", label: "Copy edit", createdAt: Date.now() });
+  const editorPhase = store.addPhase({ turnId: opts.turnId, seq: seqOffset + 1, branch: 0, kind: "revise", label: "Polish", createdAt: Date.now() });
   const editorResult = await runPhaseLite({
     taskId: opts.taskId, phaseId: editorPhase.id, kind: "critique",
     prompt: editorPrompt({ goal: opts.goal, language: opts.language, thesisPresent: thesis !== null }),
