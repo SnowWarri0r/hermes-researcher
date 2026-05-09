@@ -31,6 +31,7 @@ import {
   editorPrompt,
   claimAuditPrompt,
   reportQualityPrompt,
+  researchPrompt,
 } from "../src/prompt.ts";
 import type { Plan, ParsedThesis } from "../../shared/types.ts";
 
@@ -254,6 +255,31 @@ const cases: { name: string; build: () => string }[] = [
         goal: fixtureGoal,
         report: "## TL;DR\n短报告，无数字无来源。",
         thesis: fixtureThesis,
+      }),
+  },
+  {
+    name: "11_researchPrompt_no_prereq",
+    build: () =>
+      researchPrompt({
+        goal: fixtureGoal,
+        question: fixturePlan.questions[0],
+        context: "",
+      }),
+  },
+  {
+    name: "12_researchPrompt_with_prereq",
+    build: () =>
+      researchPrompt({
+        goal: fixtureGoal,
+        question: fixturePlan.questions[1],
+        context: "",
+        prerequisites: [
+          {
+            id: "Q1",
+            title: "A7M5 ISO 表现",
+            output: fixtureFindings[0].output,
+          },
+        ],
       }),
   },
 ];

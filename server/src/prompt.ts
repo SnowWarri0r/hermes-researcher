@@ -485,6 +485,14 @@ Approach: ${opts.question.approach}
 - **300–800 words max.** Be dense, not verbose. Every sentence should carry information.
 - Do NOT repeat the question or goal in your output.
 
+## Voice contagion — DO NOT inherit source voice
+
+Sources you read may use promotional language ("市场领先""旗舰""创新性""next-gen""game-changing") or buzzwords ("赛道""战场""转向"). Your job is to extract evidence, not to absorb tone.
+
+- When a source makes a claim using those words, **paraphrase the underlying fact** ("Sennheiser 官方页面声称 HD660S2 提供更宽声场，未给出测量数据") rather than echoing the claim ("HD660S2 提供更宽声场 — Sennheiser").
+- For claims worth preserving in original tone, put them in \`## Raw quotes\` as a verbatim attributed quote. There they're labelled as someone else's voice; in the body of your findings they would read as your own.
+- Avoid: 战场 / 主战场 / 赛道 / 转向 / 压过 / 反超 / 头部玩家 / 范式 / 押注 / battleground / "X is the new Y". These have no measurable referent.
+
 ## Required: preserve raw quotes
 
 After your findings, add a section \`## Raw quotes\` with **3–6 direct excerpts** from the sources you cited. Each quote:
