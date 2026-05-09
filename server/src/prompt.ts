@@ -1376,7 +1376,22 @@ Rules:
 }
 
 // ---------------------------------------------------------------------------
-// D. Report quality self-evaluation — score after revise
+// D. Report quality evaluation — RACE-style 4-dimension rubric.
+//
+// Adopted from DeepResearch Bench (Du et al., 2025; updated 2026) and
+// validated as the production-grade evaluation framework by Mind DR
+// (Tencent, 2026-04). RACE = Reference-based Adaptive Criteria-driven
+// Evaluation. We use the dimension structure but skip the "reference report"
+// requirement — for production use, scoring without a reference is fine.
+//
+// 4 dimensions:
+//   - Comprehensiveness: coverage breadth + depth
+//   - Insight: analytical depth, sharp judgment, non-obvious takeaways
+//   - Instruction-Following: alignment with the goal's specific asks
+//   - Readability: clarity, organization, structural cleanliness
+// Plus we keep our own structural integrity check (scaffold leak, AI-digest
+// cliché infection) as a hard-fail gate, since these are deterministically
+// checkable defects that no rubric should let pass.
 // ---------------------------------------------------------------------------
 export function reportQualityPrompt(opts: {
   goal: string;
@@ -1386,62 +1401,99 @@ export function reportQualityPrompt(opts: {
   const thesisBlock = opts.thesis
     ? `
 
-## Narrative arc check (thesis present)
+<thesis_check>
+Central claim the report committed to: "${opts.thesis.central_claim}"
 
-**Central claim**: ${opts.thesis.central_claim}
-
-If ANY of these is true, set score ≤ 3 and pass=false:
-- TL;DR does not paraphrase the central claim
-- No cross-section connectors (sections read as independent Q&A)
-- Final section has no "so what" (pure summary)
-`
+For Comprehensiveness + Instruction-Following + Insight, the report should:
+- TL;DR opens with this claim as a flat declarative.
+- Each content section advances toward / against the claim.
+- Final section has one explicit "so what" — not a summary.
+If TL;DR doesn't paraphrase the claim, dock Instruction-Following ≤4.
+If sections don't advance the claim, dock Insight ≤4.
+</thesis_check>`
     : "";
 
-  // Inspect head and tail so late-section style defects don't get lost in the slice.
+  // Head + tail slice so late-section defects don't get lost in long reports.
   const reportSample =
     opts.report.length > 12000
       ? `${opts.report.slice(0, 8000)}\n\n[…middle truncated…]\n\n${opts.report.slice(-3500)}`
       : opts.report;
 
-  return `# Report quality evaluation
+  return `<role>
+You are evaluating a finished research report against a 4-dimension rubric (RACE: Reference-based Adaptive Criteria-driven Evaluation, DeepResearch Bench 2025 / Mind DR 2026). Score each dimension independently 1-10. Be honest, not generous — most first drafts genuinely score 5-7.
+</role>
 
-Score this research report on a 1-10 scale.
-
-## Goal
+<goal>
 ${opts.goal}
+</goal>
 
-## Hard-fail style checks (any → score ≤ 3, pass=false)
-- **Visible scaffold labels** — any line, bullet, italic, bold, or heading rendering: \`IN[:：]\`, \`OUT[:：]\`, \`Connection (IN|OUT)\`, \`Section claim\`, \`Sub-claim\`, \`Sub claim\`, \`子论点\`, \`小结论\`, \`Signal vs noise\`, \`信号 vs 噪音\`, \`Key facts\`, \`Length target\`. These are internal scaffolds; their presence is a leak.
-- **Per-section formula stamping** — most/all content sections share the same template-style opening (e.g. all start with \`*IN：…*\` / \`小结论：…\`).
-- **Standalone "Signal vs noise" subsection or table** — even without the literal label, an obvious tabular dichotomy inserted in every section is a tell.
-- **Generic AI-digest cliche infection** — three or more occurrences of the cliche set: 战场 / 主战场 / 角力 / 压过 / 碾压 / 反超 / 弯道超车 / 转向 / 拐点 / 风口 / 赛道 / 头部玩家 / 玩家 / 叙事 / 范式 / 生态闭环 / 押注 / 重金布局 / battleground / AI race / arms race / "X is the new Y" / "X is eating Y". Two is borderline; three is a hard fail.
-- **Empty competition framing** — at least one sentence shaped "X 从 Y 转向 Z" / "A 在 B 上压过了 C" / "AI 竞争已经迈入..." with no specific date / version / number / source attached.
+<rubric>
+Score each dimension on 1-10, with concrete anchor points:
 
-If pass fails on style, list the offending pattern in \`issues\` so the editor can strip it.
+1. **Comprehensiveness** — does the report cover the breadth and depth the goal requires?
+   - 1-3: misses major dimensions of the goal
+   - 4-6: covers obvious dimensions; misses 1-2 important angles
+   - 7-8: covers all goal dimensions, depth in most
+   - 9-10: covers everything + non-obvious adjacent angles
 
-## Report
+2. **Insight** — does the report make sharp non-obvious judgments backed by evidence?
+   - 1-3: no judgments, pure aggregation; or empty buzzword judgments ("赛道""转向")
+   - 4-6: makes claims but most are restating findings; conclusions are vague
+   - 7-8: at least 2-3 concrete judgments with mechanism + evidence
+   - 9-10: argues a novel position the goal didn't directly ask for
+
+3. **Instruction-Following** — does the report directly answer the goal as asked?
+   - 1-3: drifts off-topic / answers a different question
+   - 4-6: addresses the goal but skips specific asks (e.g. goal mentions "compare X / Y / Z" but report only covers X / Y)
+   - 7-8: directly addresses every specific ask in the goal
+   - 9-10: also handles edge cases the goal implies
+
+4. **Readability** — is the report well-organized, clean, easy to skim?
+   - 1-3: structural mess, malformed tables, orphan sub-sections, dead links
+   - 4-6: readable but redundant; same fact appears 3 times across sections
+   - 7-8: clean structure, citations next to claims, TL;DR aligns with body
+   - 9-10: any reader can grasp the central claim in 30 seconds
+</rubric>
+
+<hard_fail_checks>
+ANY of these → set score ≤ 3 on the relevant dimension and pass=false. List the offending pattern in \`issues\`:
+
+- **Visible scaffold labels** (Readability ≤3): \`IN[:：]\` / \`OUT[:：]\` / \`Connection (IN|OUT)\` / \`Section claim\` / \`Sub-claim\` / \`小结论\` / \`Signal vs noise\` / \`信号 vs 噪音\` / \`tie_to_previous\` / \`tee_up_next\` / \`Key facts\` rendered as visible text.
+- **Per-section formula stamping** (Readability ≤4): 2+ sections share the same bold-line opener template.
+- **AI-digest cliché infection** (Insight ≤3): 3+ occurrences of 战场 / 主战场 / 角力 / 压过 / 反超 / 转向 / 拐点 / 赛道 / 头部玩家 / 叙事 / 范式 / 押注 / battleground / AI race / arms race / "X is the new Y".
+- **Empty competition framing** (Insight ≤3): a sentence shaped "X 从 Y 转向 Z" / "A 在 B 上压过了 C" with no date / version / number / source.
+- **Source-bias tell** (Insight ≤4): the report's voice reads as vendor marketing copy ("旗舰""极致""市场领先""创新性") without attribution.
+</hard_fail_checks>
+
+<report>
 ${reportSample}
+</report>
 ${thesisBlock}
-## Output (strict JSON)
+
+<output_format>
+Output ONE JSON object inside a fenced \`\`\`json block. Schema:
+
 \`\`\`json
 {
+  "comprehensiveness": 7,
+  "insight": 6,
+  "instruction_following": 8,
+  "readability": 7,
   "score": 7,
   "pass": true,
-  "issues": ["issue 1 if any"]
+  "issues": [
+    "Comprehensiveness: skips Q3's findings on二手价",
+    "Insight: 2 occurrences of '赛道'"
+  ]
 }
 \`\`\`
 
-## Scoring guide
-- 1-4: Major gaps, wrong information, or doesn't address the goal → pass=false
-- 5-6: Addresses the goal but thin on evidence or missing key aspects → pass=false
-- 7-8: Solid coverage with citations, minor improvements possible → pass=true
-- 9-10: Exceptional depth and rigor → pass=true
-
 Rules:
-- Be honest, not generous. Most first drafts score 5-7.
-- "pass" = true means acceptable to deliver. false means needs another revision.
-- Max 3 issues, each under 20 words. Focus on fixable problems.
-- If score ≥ 7, set pass=true even if minor issues exist.`;
+- \`score\` is the WEIGHTED average. Default weights: comprehensiveness 0.30, insight 0.30, instruction_following 0.25, readability 0.15. Round to 1 decimal then to integer.
+- \`pass\` = true ONLY IF: every dimension ≥6 AND no hard-fail check triggered AND \`score\` ≥7.
+- Max 5 issues. Each ≤20 words. Each issue MUST start with the dimension name.
+- If pass fails on a hard-fail check, the dimension's score must already reflect the cap (≤3 or ≤4 depending on check).
+</output_format>`;
 }
 
 // ---------------------------------------------------------------------------
