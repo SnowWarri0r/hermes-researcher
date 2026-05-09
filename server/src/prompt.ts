@@ -645,46 +645,84 @@ export function classifyEvidenceMix(
   return { total, byType, vendorRatio, topHosts };
 }
 
+/**
+ * Compress an oversized research finding while keeping the highest-signal
+ * structural content intact.
+ *
+ * Priority (in order — each tier is fully kept before the next is consulted):
+ *   1. Headings (`#`, `##`, ...)
+ *   2. Blockquotes (`> ...`) — these carry the verbatim source quotes that
+ *      the writer prompt explicitly asks for. Previously dropped when budget
+ *      ran out at the END of the finding (the `## Raw quotes` block lives
+ *      there); now protected.
+ *   3. Lines containing a markdown URL `[text](https?://...)`
+ *   4. List items (-, *, 1.)
+ *   5. Prose lines, in order, until budget exhausted.
+ *
+ * Design: a bad findings compress drops citable evidence; the writer then
+ * has nothing to anchor claims in and falls back to AI-flavored framing.
+ * Protecting structural content addresses this directly.
+ */
 export function compressFindings(
-  findings: { questionId: string; title: string; output: string }[]
+  findings: { questionId: string; title: string; output: string }[],
 ): { questionId: string; title: string; output: string }[] {
   return findings.map((f) => {
     if (f.output.length <= MAX_FINDING_CHARS) return f;
 
-    // Keep headings + first sentence per section + all bullet points + links
     const lines = f.output.split("\n");
-    const kept: string[] = [];
+    const isHeading = (l: string) => /^\s*#/.test(l);
+    const isQuote = (l: string) => /^\s*>/.test(l);
+    const hasUrl = (l: string) => /\[.*?\]\(https?:\/\//.test(l);
+    const isBullet = (l: string) =>
+      /^\s*(?:[-*+]\s|\d+\.\s)/.test(l);
+
+    // Tag each line by tier; preserve original index so we can rebuild
+    // in document order at the end.
+    type Tier = 0 | 1 | 2 | 3 | 4;
+    const tagged = lines.map((line, idx): {
+      idx: number;
+      line: string;
+      tier: Tier;
+      cost: number;
+    } => {
+      let tier: Tier = 4;
+      if (isHeading(line)) tier = 0;
+      else if (isQuote(line)) tier = 1;
+      else if (hasUrl(line)) tier = 2;
+      else if (isBullet(line)) tier = 3;
+      return { idx, line, tier, cost: line.length + 1 };
+    });
+
+    const kept = new Set<number>();
     let budget = MAX_FINDING_CHARS;
-    let afterHeading = false;
 
-    for (const line of lines) {
-      if (budget <= 0) break;
-      const trimmed = line.trim();
-
-      if (trimmed.startsWith("#")) {
-        kept.push(line);
-        budget -= line.length;
-        afterHeading = true;
-      } else if (afterHeading && trimmed.length > 0) {
-        kept.push(line);
-        budget -= line.length;
-        afterHeading = false;
-      } else if (
-        trimmed.startsWith("- ") ||
-        trimmed.startsWith("* ") ||
-        /^\d+\./.test(trimmed)
-      ) {
-        kept.push(line);
-        budget -= line.length;
-      } else if (trimmed.match(/\[.*?\]\(https?:\/\//)) {
-        kept.push(line);
-        budget -= line.length;
+    // Walk tiers low → high; keep everything in a tier if it fits, else
+    // fill remaining budget greedily within the tier.
+    for (const tier of [0, 1, 2, 3, 4] as Tier[]) {
+      const tierLines = tagged.filter((t) => t.tier === tier);
+      const tierTotal = tierLines.reduce((s, t) => s + t.cost, 0);
+      if (tierTotal <= budget) {
+        for (const t of tierLines) kept.add(t.idx);
+        budget -= tierTotal;
+        continue;
       }
+      // Partial fill — keep until budget exhausted.
+      for (const t of tierLines) {
+        if (t.cost > budget) continue;
+        kept.add(t.idx);
+        budget -= t.cost;
+      }
+      break;
     }
+
+    const reconstructed = tagged
+      .filter((t) => kept.has(t.idx))
+      .map((t) => t.line)
+      .join("\n");
 
     return {
       ...f,
-      output: `[Condensed from ${f.output.length} chars]\n\n${kept.join("\n")}`,
+      output: `[Condensed from ${f.output.length} chars; structural content prioritized]\n\n${reconstructed}`,
     };
   });
 }
