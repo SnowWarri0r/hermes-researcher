@@ -363,6 +363,81 @@ for (const r of results) {
 console.log(`---`);
 console.log(`total: ${results.length} cases, ${formatBytes(bytesTotal)} assembled output`);
 
+// ─── per-mode budget rollup ────────────────────────────────────────────────
+//
+// Most users care about "what does one task cost in prompt tokens", not
+// "how big is the critique prompt in isolation". Sum each mode's typical
+// invocation pattern from the size data we already have. Numbers are
+// conservative — they assume audit triggers the rewrite loop (worst case).
+
+const sizeByName = new Map(results.map((r) => [r.name, r.size] as const));
+const lookup = (name: string): number => sizeByName.get(name) ?? 0;
+
+interface ModeBudget {
+  mode: string;
+  bestCase: number;
+  worstCase: number;
+  detail: string;
+}
+
+const modes: ModeBudget[] = [
+  {
+    mode: "deep (audit clean)",
+    bestCase:
+      lookup("01_planPrompt") +
+      lookup("02_thesisPrompt_with_perspectives") +
+      lookup("03_outlinePrompt_with_thesis") +
+      5 * lookup("11_researchPrompt_no_prereq") +
+      lookup("05_draftPrompt_full") +
+      lookup("09_claimAuditPrompt") +
+      lookup("08_editorPrompt_polish"),
+    worstCase: 0, // filled below
+    detail: "1 plan + 1 thesis + 1 outline + 5 research + 1 draft + 1 audit + 1 polish",
+  },
+  {
+    mode: "deep (audit dirty + 1 quality iter)",
+    bestCase: 0,
+    worstCase:
+      lookup("01_planPrompt") +
+      lookup("02_thesisPrompt_with_perspectives") +
+      lookup("03_outlinePrompt_with_thesis") +
+      5 * lookup("11_researchPrompt_no_prereq") +
+      lookup("05_draftPrompt_full") +
+      lookup("09_claimAuditPrompt") +
+      lookup("06_critiqueInstructionPrompt") +
+      lookup("07_reviseInstructionPrompt_with_audit") +
+      lookup("10_reportQualityPrompt") +
+      lookup("08_editorPrompt_polish"),
+    detail: "+ critique + revise + quality + polish",
+  },
+  {
+    mode: "standard (audit clean)",
+    bestCase:
+      lookup("01_planPrompt") +
+      lookup("02_thesisPrompt_with_perspectives") +
+      lookup("03_outlinePrompt_with_thesis") +
+      4 * lookup("11_researchPrompt_no_prereq") +
+      lookup("05_draftPrompt_full") +
+      lookup("09_claimAuditPrompt") +
+      lookup("08_editorPrompt_polish"),
+    worstCase: 0,
+    detail: "1 plan + 1 thesis + 1 outline + 4 research + 1 draft + 1 audit + 1 polish",
+  },
+];
+
+console.log("\n=== per-mode prompt budget (input only, all phases) ===");
+for (const m of modes) {
+  const v = m.bestCase || m.worstCase;
+  const approxTokens = Math.round(v / 4); // crude bytes/4 = tokens for English-ish
+  console.log(
+    `  ${m.mode.padEnd(40)} ${formatBytes(v).padStart(8)}  ≈${approxTokens.toLocaleString()} tok`,
+  );
+  console.log(`    ${m.detail}`);
+}
+console.log(
+  `  cache lever: styleGuide is ~6.5KB (in 4 prompts above), reorder commits put it as prefix`,
+);
+
 if (update) {
   console.log("snapshots updated.");
 } else if (failed > 0) {
