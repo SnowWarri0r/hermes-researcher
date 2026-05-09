@@ -725,105 +725,123 @@ async function runDeepMode(
     draftOutput = draftResult.output;
   }
 
-  // ── Critique (seq=5 now) ──
-  let critiqueOutput: string;
-  if (cache?.critiqueOutput && thesisAvailable) {
-    replayPhase(opts.turnId, opts.taskId, {
-      seq: 5, branch: 0, kind: "critique", label: "Self-critique (cached)",
-      output: cache.critiqueOutput, usage: cache.critiqueUsage,
-    });
-    usages.push(cache.critiqueUsage);
-    critiqueOutput = cache.critiqueOutput;
-  } else {
-    const critiquePhase = store.addPhase({ turnId: opts.turnId, seq: 5, branch: 0, kind: "critique", label: "Self-critique", createdAt: Date.now() });
-    const critiqueResult = await runPhaseLite({
-      taskId: opts.taskId, phaseId: critiquePhase.id, kind: "critique",
-      prompt: critiqueInstructionPrompt({ goal: opts.goal, thesis, outline: outlineText }),
-      messages: [
-        { role: "user", content: draftPromptText },
-        { role: "assistant", content: draftOutput },
-        { role: "user", content: critiqueInstructionPrompt({ goal: opts.goal, thesis, outline: outlineText }) },
-      ],
-    });
-    usages.push(critiqueResult.usage);
-    critiqueOutput = critiqueResult.output;
-  }
-
-  // ── Claim audit (seq=6) — verifiable-content check on the draft.
-  // Cheap focused pass; output goes into revise so it fixes specific
-  // unsupported sentences instead of rewriting whole sections.
+  // ── Claim audit (seq=5) — runs FIRST. If the v2 prompt produced a clean
+  // draft (no unsupported claims), skip the critique → revise loop entirely.
+  // Trust the audit: it's evidence-based, the loop is just there to fix
+  // specific issues. No issues = no work.
   const findingTitles = findings.map((f) => ({ questionId: f.questionId, title: f.title }));
-  const auditResult = await runClaimAudit(opts, 6, draftOutput, findingTitles);
+  const auditResult = await runClaimAudit(opts, 5, draftOutput, findingTitles);
   usages.push(auditResult.usage);
 
-  // ── Revise + quality loop (seqOffset starts at 7 now, after audit) ──
-  let currentDraft = draftOutput;
-  let currentCritique = critiqueOutput;
-  let currentUnsupported = auditResult.unsupported;
-  let seqOffset = 7;
   let finalRevision = draftOutput;
+  let polishSeq = 6;
 
-  for (let iteration = 0; iteration <= MAX_QUALITY_ITERATIONS; iteration++) {
-    const isRetry = iteration > 0;
-    const reviseLabel = isRetry ? `Revision (iteration ${iteration + 1})` : "Final revision";
-
-    const revisePhase = store.addPhase({ turnId: opts.turnId, seq: seqOffset, branch: 0, kind: "revise", label: reviseLabel, createdAt: Date.now() });
-    const reviseResult = await runPhase({
-      taskId: opts.taskId, phaseId: revisePhase.id, kind: "revise",
-      prompt: reviseInstructionPrompt({
-        goal: opts.goal, toolsets: opts.toolsets, language: opts.language,
-        thesis, outline: outlineText,
-        unsupportedClaims: currentUnsupported,
-      }),
-      conversationHistory: [
-        { role: "user", content: "Write a draft report." },
-        { role: "assistant", content: currentDraft },
-        { role: "user", content: "Critique this report." },
-        { role: "assistant", content: currentCritique },
-      ],
-    });
-    usages.push(reviseResult.usage);
-    finalRevision = reviseResult.output;
-
-    // D. Quality gate
-    if (iteration < MAX_QUALITY_ITERATIONS) {
-      const quality = await evaluateReportQuality(opts, reviseResult.output, thesis);
-      broadcast(opts.taskId, {
-        event: "pipeline.quality_check",
-        data: {
-          score: quality.score,
-          pass: quality.pass,
-          issues: quality.issues,
-          race: quality.race,
-          iteration: iteration + 1,
-        },
+  // Run the rewrite loop only when audit found something to fix.
+  if (auditResult.unsupported.length > 0) {
+    // ── Critique (seq=6 now, only when audit dirty) ──
+    let critiqueOutput: string;
+    if (cache?.critiqueOutput && thesisAvailable) {
+      replayPhase(opts.turnId, opts.taskId, {
+        seq: 6, branch: 0, kind: "critique", label: "Self-critique (cached)",
+        output: cache.critiqueOutput, usage: cache.critiqueUsage,
       });
-
-      if (quality.pass) break;
-
-      seqOffset += 2;
-      currentDraft = reviseResult.output;
-      // Audit was applied in the first revise; subsequent iterations
-      // respond only to the quality gate, no stale unsupported list.
-      currentUnsupported = [];
-
-      const reCritiquePhase = store.addPhase({ turnId: opts.turnId, seq: seqOffset - 1, branch: 0, kind: "critique", label: `Re-critique (score: ${quality.score}/10)`, createdAt: Date.now() });
-      const reCritiqueResult = await runPhaseLite({
-        taskId: opts.taskId, phaseId: reCritiquePhase.id, kind: "critique",
+      usages.push(cache.critiqueUsage);
+      critiqueOutput = cache.critiqueOutput;
+    } else {
+      const critiquePhase = store.addPhase({ turnId: opts.turnId, seq: 6, branch: 0, kind: "critique", label: "Self-critique", createdAt: Date.now() });
+      const critiqueResult = await runPhaseLite({
+        taskId: opts.taskId, phaseId: critiquePhase.id, kind: "critique",
         prompt: critiqueInstructionPrompt({ goal: opts.goal, thesis, outline: outlineText }),
         messages: [
-          { role: "user", content: "Here is the revised report." },
-          { role: "assistant", content: currentDraft },
-          { role: "user", content: `The report scored ${quality.score}/10. Issues: ${quality.issues.join("; ")}. Provide a focused critique addressing these specific issues.` },
+          { role: "user", content: draftPromptText },
+          { role: "assistant", content: draftOutput },
+          { role: "user", content: critiqueInstructionPrompt({ goal: opts.goal, thesis, outline: outlineText }) },
         ],
       });
-      usages.push(reCritiqueResult.usage);
-      currentCritique = reCritiqueResult.output;
+      usages.push(critiqueResult.usage);
+      critiqueOutput = critiqueResult.output;
     }
+
+    broadcast(opts.taskId, {
+      event: "pipeline.audit_decision",
+      data: { unsupported_count: auditResult.unsupported.length, took_revise_path: true },
+    });
+
+    // ── Revise + quality loop (seqOffset starts at 7) ──
+    let currentDraft = draftOutput;
+    let currentCritique = critiqueOutput;
+    let currentUnsupported = auditResult.unsupported;
+    let seqOffset = 7;
+
+    for (let iteration = 0; iteration <= MAX_QUALITY_ITERATIONS; iteration++) {
+      const isRetry = iteration > 0;
+      const reviseLabel = isRetry ? `Revision (iteration ${iteration + 1})` : "Final revision";
+
+      const revisePhase = store.addPhase({ turnId: opts.turnId, seq: seqOffset, branch: 0, kind: "revise", label: reviseLabel, createdAt: Date.now() });
+      const reviseResult = await runPhase({
+        taskId: opts.taskId, phaseId: revisePhase.id, kind: "revise",
+        prompt: reviseInstructionPrompt({
+          goal: opts.goal, toolsets: opts.toolsets, language: opts.language,
+          thesis, outline: outlineText,
+          unsupportedClaims: currentUnsupported,
+        }),
+        conversationHistory: [
+          { role: "user", content: "Write a draft report." },
+          { role: "assistant", content: currentDraft },
+          { role: "user", content: "Critique this report." },
+          { role: "assistant", content: currentCritique },
+        ],
+      });
+      usages.push(reviseResult.usage);
+      finalRevision = reviseResult.output;
+
+      // D. Quality gate
+      if (iteration < MAX_QUALITY_ITERATIONS) {
+        const quality = await evaluateReportQuality(opts, reviseResult.output, thesis);
+        broadcast(opts.taskId, {
+          event: "pipeline.quality_check",
+          data: {
+            score: quality.score,
+            pass: quality.pass,
+            issues: quality.issues,
+            race: quality.race,
+            iteration: iteration + 1,
+          },
+        });
+
+        if (quality.pass) break;
+
+        seqOffset += 2;
+        currentDraft = reviseResult.output;
+        // Audit was applied in the first revise; subsequent iterations
+        // respond only to the quality gate, no stale unsupported list.
+        currentUnsupported = [];
+
+        const reCritiquePhase = store.addPhase({ turnId: opts.turnId, seq: seqOffset - 1, branch: 0, kind: "critique", label: `Re-critique (score: ${quality.score}/10)`, createdAt: Date.now() });
+        const reCritiqueResult = await runPhaseLite({
+          taskId: opts.taskId, phaseId: reCritiquePhase.id, kind: "critique",
+          prompt: critiqueInstructionPrompt({ goal: opts.goal, thesis, outline: outlineText }),
+          messages: [
+            { role: "user", content: "Here is the revised report." },
+            { role: "assistant", content: currentDraft },
+            { role: "user", content: `The report scored ${quality.score}/10. Issues: ${quality.issues.join("; ")}. Provide a focused critique addressing these specific issues.` },
+          ],
+        });
+        usages.push(reCritiqueResult.usage);
+        currentCritique = reCritiqueResult.output;
+      }
+    }
+    polishSeq = seqOffset + 1;
+  } else {
+    // Audit clean — skipped critique + revise loop entirely.
+    broadcast(opts.taskId, {
+      event: "pipeline.audit_decision",
+      data: { unsupported_count: 0, took_revise_path: false },
+    });
   }
 
-  // ── Editor pass (seqOffset + 1) ──
-  const editorPhase = store.addPhase({ turnId: opts.turnId, seq: seqOffset + 1, branch: 0, kind: "revise", label: "Polish", createdAt: Date.now() });
+  // ── Polish ──
+  const editorPhase = store.addPhase({ turnId: opts.turnId, seq: polishSeq, branch: 0, kind: "revise", label: "Polish", createdAt: Date.now() });
   const editorResult = await runPhaseLite({
     taskId: opts.taskId, phaseId: editorPhase.id, kind: "critique",
     prompt: editorPrompt({ goal: opts.goal, language: opts.language, thesisPresent: thesis !== null }),
