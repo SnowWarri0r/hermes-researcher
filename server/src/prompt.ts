@@ -887,7 +887,16 @@ ${
 </evidence_mix>\n`
       : "";
 
-  return `# Write the report
+  // styleGuide is intentionally FIRST. It's identical across every draft call,
+  // so on providers with automatic prefix caching (Anthropic ≥1024 tokens),
+  // putting it before any task-specific content makes it cacheable and shaves
+  // ~90% off its tokens on cache hits. With styleGuide ~6.5KB (~1.5-2K tokens),
+  // this is the largest single cost lever available without trimming content.
+  return `${styleGuide(opts.language)}
+
+---
+
+# Write the report
 
 ## Goal
 ${opts.goal}
@@ -896,9 +905,7 @@ ${opts.context ? `## Context\n\n${opts.context}\n\n` : ""}## Planned sections
 ${sectionsList}
 ${perspectivesBlock}${evidenceMixBlock}
 ## Research findings
-${findingsBlock}${outlineBlock}${narrativeBlock}
-
-${styleGuide(opts.language)}`;
+${findingsBlock}${outlineBlock}${narrativeBlock}`;
 }
 
 function buildNarrativeArcBlock(thesis: ParsedThesis): string {
@@ -1047,7 +1054,12 @@ export function revisePrompt(opts: {
       ? `\n\nYou may use these toolsets for fact-checking if needed: ${opts.toolsets.join(", ")}`
       : "";
 
-  return `# Final revision
+  // styleGuide first for prefix caching.
+  return `${styleGuide(opts.language)}
+
+---
+
+# Final revision
 
 Apply this critique to produce the final report.
 
@@ -1067,9 +1079,7 @@ ${opts.critique}
 
 - Output ONLY the final report. No meta-commentary about what changed.
 - Address the priority fix list. Strengthen weak claims or remove them.
-- The report must read as a standalone document.
-
-${styleGuide(opts.language)}`;
+- The report must read as a standalone document.`;
 }
 
 // ---------------------------------------------------------------------------
@@ -1180,12 +1190,15 @@ Do NOT rewrite paragraphs that aren't on this list. Targeted edits only.
 </unsupported_claims>`
       : "";
 
-  return `# Revise your draft based on the critique above
+  // styleGuide first for prefix caching (see draftPrompt for rationale).
+  return `${styleGuide(opts.language)}
+
+---
+
+# Revise your draft based on the critique above
 
 Apply the critique. Output the complete revised report.
-${toolsetsBlock}${narrativeReminder}${claimAuditBlock}
-
-${styleGuide(opts.language)}`;
+${toolsetsBlock}${narrativeReminder}${claimAuditBlock}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -1327,7 +1340,8 @@ export function directReportPrompt(opts: {
       ? `\n\nAvailable toolsets: ${opts.toolsets.join(", ")}`
       : "";
 
-  let p = `# Research task\n\n${opts.goal}`;
+  // styleGuide first for prefix caching (largest cost lever).
+  let p = `${styleGuide(opts.language)}\n\n---\n\n# Research task\n\n${opts.goal}`;
   if (opts.context) p += `\n\n## Context\n\n${opts.context}`;
   p += toolsetsBlock;
 
@@ -1337,7 +1351,6 @@ export function directReportPrompt(opts: {
     p += `\n\n## Hard rules\n\n- Output the full new report.\n- Do NOT acknowledge this is a revision.`;
   }
 
-  p += `\n\n${styleGuide(opts.language)}`;
   return p;
 }
 
