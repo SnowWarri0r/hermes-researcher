@@ -151,18 +151,22 @@ function describeCron(cron: string): string {
   return cron;
 }
 
+const EMPTY_FORM = {
+  name: "",
+  goal: "",
+  context: "",
+  mode: "deep",
+  language: "",
+  cron: "0 9 * * *",
+  discordWebhook: "",
+};
+
 export function Schedules() {
   const [schedules, setSchedules] = useState<ScheduleItem[]>([]);
   const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState({
-    name: "",
-    goal: "",
-    context: "",
-    mode: "deep",
-    language: "",
-    cron: "0 9 * * *",
-    discordWebhook: "",
-  });
+  /** When editing, holds the id of the row being edited; null means create. */
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [form, setForm] = useState({ ...EMPTY_FORM });
   const [triggering, setTriggering] = useState<string | null>(null);
 
   useEffect(() => {
@@ -176,24 +180,43 @@ export function Schedules() {
       .catch(() => {});
   }
 
+  function resetForm() {
+    setForm({ ...EMPTY_FORM });
+    setEditingId(null);
+    setShowForm(false);
+  }
+
   async function handleCreate() {
     if (!form.name || !form.goal || !form.cron) return;
-    await fetch(`${API}/schedules`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ...form, toolsets: [], enabled: true }),
-    });
-    setForm({
-      name: "",
-      goal: "",
-      context: "",
-      mode: "deep",
-      language: "",
-      cron: "0 9 * * *",
-      discordWebhook: "",
-    });
-    setShowForm(false);
+    if (editingId) {
+      await fetch(`${API}/schedules/${editingId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(form),
+      });
+    } else {
+      await fetch(`${API}/schedules`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...form, toolsets: [], enabled: true }),
+      });
+    }
+    resetForm();
     reload();
+  }
+
+  function handleEdit(s: ScheduleItem) {
+    setEditingId(s.id);
+    setForm({
+      name: s.name,
+      goal: s.goal,
+      context: s.context,
+      mode: s.mode,
+      language: s.language,
+      cron: s.cron,
+      discordWebhook: s.discordWebhook,
+    });
+    setShowForm(true);
   }
 
   async function handleToggle(id: string, enabled: boolean) {
@@ -253,7 +276,7 @@ export function Schedules() {
         </div>
         <div className="flex-1" />
         <button
-          onClick={() => setShowForm((s) => !s)}
+          onClick={() => (showForm ? resetForm() : setShowForm(true))}
           className="px-4 py-2 text-[12px] font-mono tracking-wider text-emerald-signal bg-carbon border border-emerald-signal rounded hover:bg-emerald-dim transition-colors"
           style={{ boxShadow: "0 0 12px rgba(0,217,146,0.2)" }}
         >
@@ -326,12 +349,22 @@ export function Schedules() {
             <code className="text-parchment">{"{month}"}</code>{" "}
             <code className="text-parchment">{"{year}"}</code>
           </div>
-          <button
-            onClick={handleCreate}
-            className="px-4 py-2 text-sm font-medium bg-emerald-signal/10 text-emerald-signal border border-emerald-signal/20 rounded hover:bg-emerald-signal/20 transition-colors"
-          >
-            Create schedule
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleCreate}
+              className="px-4 py-2 text-sm font-medium bg-emerald-signal/10 text-emerald-signal border border-emerald-signal/20 rounded hover:bg-emerald-signal/20 transition-colors"
+            >
+              {editingId ? "Save changes" : "Create schedule"}
+            </button>
+            {editingId && (
+              <button
+                onClick={resetForm}
+                className="px-3 py-2 text-sm text-slate-steel hover:text-parchment border border-charcoal rounded transition-colors"
+              >
+                Cancel
+              </button>
+            )}
+          </div>
         </div>
       )}
 
@@ -352,9 +385,11 @@ export function Schedules() {
               key={s.id}
               schedule={s}
               isNext={nextUp?.id === s.id}
+              isEditing={editingId === s.id}
               onToggle={handleToggle}
               onDelete={handleDelete}
               onTrigger={handleTrigger}
+              onEdit={handleEdit}
               triggering={triggering === s.id}
             />
           ))}
@@ -496,16 +531,20 @@ function DayTimeline({
 function ScheduleCard({
   schedule,
   isNext,
+  isEditing,
   onToggle,
   onDelete,
   onTrigger,
+  onEdit,
   triggering,
 }: {
   schedule: ScheduleItem;
   isNext: boolean;
+  isEditing: boolean;
   onToggle: (id: string, enabled: boolean) => void;
   onDelete: (id: string) => void;
   onTrigger: (id: string) => void;
+  onEdit: (s: ScheduleItem) => void;
   triggering: boolean;
 }) {
   const next = useMemo(() => cronNextTrigger(schedule.cron), [schedule.cron]);
@@ -513,8 +552,16 @@ function ScheduleCard({
   const lastLabel = schedule.lastRunAt ? formatRelativeShort(schedule.lastRunAt) : "—";
 
   const paused = !schedule.enabled;
-  const accent = isNext ? "border-emerald-signal/50" : "border-charcoal";
-  const bg = isNext ? "bg-carbon-hover" : "bg-carbon";
+  const accent = isEditing
+    ? "border-warning/50"
+    : isNext
+      ? "border-emerald-signal/50"
+      : "border-charcoal";
+  const bg = isEditing
+    ? "bg-warning-dim"
+    : isNext
+      ? "bg-carbon-hover"
+      : "bg-carbon";
 
   return (
     <div
@@ -579,6 +626,17 @@ function ScheduleCard({
           title="Run now"
         >
           {triggering ? "…" : "▶ Run"}
+        </button>
+        <button
+          onClick={() => onEdit(schedule)}
+          className={`px-2.5 py-1 text-[11px] border rounded transition-colors ${
+            isEditing
+              ? "text-warning border-warning/40"
+              : "text-parchment hover:text-mint border-charcoal hover:border-mint/30"
+          }`}
+          title="Edit"
+        >
+          ✎ Edit
         </button>
         <button
           onClick={() => onDelete(schedule.id)}
