@@ -16,6 +16,19 @@ import {
 } from "../api/client";
 import { sendNotification } from "../hooks/useNotification";
 
+export interface QualityCheck {
+  iteration: number;
+  score: number;
+  pass: boolean;
+  issues: string[];
+  race?: {
+    comprehensiveness: number;
+    insight: number;
+    instruction_following: number;
+    readability: number;
+  };
+}
+
 interface TaskStore {
   tasks: Task[];
   total: number;
@@ -37,6 +50,10 @@ interface TaskStore {
   chatMessages: ChatMessage[];
   streamingChatByMessage: Record<number, string>;
   streamingChatEventsByMessage: Record<number, import("../types").TaskEvent[]>;
+
+  /** RACE quality-gate breakdowns from pipeline.quality_check events,
+   *  most recent last. Only populated for the currently active task. */
+  qualityChecks: QualityCheck[];
 
   setConnected: (c: boolean) => void;
   setSearch: (q: string) => void;
@@ -75,6 +92,7 @@ export const useTaskStore = create<TaskStore>()((set, get) => ({
   streamingText: "",
   streamingPhaseKind: "",
   streamingByPhase: {},
+  qualityChecks: [],
   activeUnsub: null,
   chatMessages: [],
   streamingChatByMessage: {},
@@ -176,6 +194,7 @@ export const useTaskStore = create<TaskStore>()((set, get) => ({
       streamingText: "",
       streamingPhaseKind: "",
       streamingByPhase: {},
+      qualityChecks: [],
       chatMessages: [],
       streamingChatByMessage: {},
       streamingChatEventsByMessage: {},
@@ -279,6 +298,21 @@ export const useTaskStore = create<TaskStore>()((set, get) => ({
               get().refreshActive();
             }
 
+            if (event.event === "pipeline.quality_check") {
+              const data = event as unknown as Record<string, unknown>;
+              const race = data.race as
+                | { comprehensiveness: number; insight: number; instruction_following: number; readability: number }
+                | undefined;
+              const entry: QualityCheck = {
+                iteration: typeof data.iteration === "number" ? data.iteration : 1,
+                score: typeof data.score === "number" ? data.score : 0,
+                pass: typeof data.pass === "boolean" ? data.pass : false,
+                issues: Array.isArray(data.issues) ? data.issues.map(String) : [],
+                race,
+              };
+              set((s) => ({ qualityChecks: [...s.qualityChecks, entry] }));
+            }
+
             if (event.event === "pipeline.completed") {
               set({ streamingText: "" });
               get().refreshActive();
@@ -379,6 +413,7 @@ export const useTaskStore = create<TaskStore>()((set, get) => ({
       streamingText: "",
       streamingPhaseKind: "",
       streamingByPhase: {},
+      qualityChecks: [],
       chatMessages: [],
       streamingChatByMessage: {},
       streamingChatEventsByMessage: {},
