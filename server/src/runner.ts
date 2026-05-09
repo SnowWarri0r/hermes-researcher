@@ -517,7 +517,7 @@ async function runStandardMode(
     usages.push(cache.thesisUsage);
     thesis = cache.thesisParsed ?? null;
   } else {
-    const thesisResult = await runThesis(opts, 2, plan.sections, findings);
+    const thesisResult = await runThesis(opts, 2, plan.sections, findings, plan.perspectives);
     usages.push(thesisResult.usage);
     thesis = thesisResult.parsed;
   }
@@ -647,7 +647,7 @@ async function runDeepMode(
     usages.push(cache.thesisUsage);
     thesis = cache.thesisParsed ?? null;
   } else {
-    const thesisResult = await runThesis(opts, 2, plan.sections, findings);
+    const thesisResult = await runThesis(opts, 2, plan.sections, findings, plan.perspectives);
     usages.push(thesisResult.usage);
     thesis = thesisResult.parsed;
   }
@@ -870,6 +870,7 @@ async function runThesis(
   seq: number,
   planSections: string[],
   findings: { questionId: string; title: string; output: string }[],
+  perspectives?: { id: string; name: string; wants: string }[],
 ): Promise<ThesisRunResult> {
   const phase = store.addPhase({
     turnId: opts.turnId,
@@ -889,6 +890,7 @@ async function runThesis(
         goal: opts.goal,
         planSections,
         findings,
+        perspectives,
         language: opts.language,
       }),
     });

@@ -32,19 +32,20 @@ export function stripScaffoldLabels(md: string): string {
   //   *Section claim: xxx*
   //   *Signal vs noise*
   const labelOnlyLine =
-    /^\s*[*_]{1,2}\s*(?:IN|OUT|Connection\s+IN|Connection\s+OUT|Section\s+claim|Sub[-\s]?claim|子论点|小结论|Signal\s+vs\.?\s+noise|信号\s*vs\.?\s*噪音)[\s*_]*[:：—\-]?[\s\S]*?[*_]{1,2}\s*$/i;
+    /^\s*[*_]{1,2}\s*(?:IN|OUT|Connection\s+IN|Connection\s+OUT|Section\s+claim|Sub[-\s]?claim|子论点|小结论|Signal\s+vs\.?\s+noise|信号\s*vs\.?\s*噪音|tie_to_previous|tee_up_next|main_point|key_facts|target_words)[\s*_]*[:：—\-]?[\s\S]*?[*_]{1,2}\s*$/i;
 
   // (2) Heading lines whose whole title is a forbidden label.
   const labelHeading =
-    /^\s*#{1,6}\s+(?:Signal\s+vs\.?\s+noise|信号\s*vs\.?\s*噪音|Sub[-\s]?claim|Section\s+claim|Connection\s+(?:IN|OUT))\s*$/i;
+    /^\s*#{1,6}\s+(?:Signal\s+vs\.?\s+noise|信号\s*vs\.?\s*噪音|Sub[-\s]?claim|Section\s+claim|Connection\s+(?:IN|OUT)|tie_to_previous|tee_up_next|main_point|key_facts)\s*$/i;
 
   // (3) Inline-prefix labels — line starts with a label, then real content follows.
   //   "**Section claim:** xxx" → "xxx"   (colon inside wrapper)
   //   "**Sub-claim**: xxx" → "xxx"        (colon outside wrapper)
   //   "**IN：可控交付**。读者……" → "读者……" (label+content inside wrapper)
+  //   "tie_to_previous: 可控交付" → "可控交付" (raw JSON-key leak)
   // We rebuild the line by stripping the leading label wrapper.
   const labelKeyword =
-    "(?:IN|OUT|Connection\\s+IN|Connection\\s+OUT|Section\\s+claim|Sub[-\\s]?claim|子论点|小结论)";
+    "(?:IN|OUT|Connection\\s+IN|Connection\\s+OUT|Section\\s+claim|Sub[-\\s]?claim|子论点|小结论|tie_to_previous|tee_up_next|main_point|key_facts|target_words)";
   const prefixLabel = new RegExp(
     `^([\\s>*\\-+]*)(?:` +
       // Form A: **Label: content**  or  **Label — content**
@@ -187,16 +188,24 @@ ${opts.context ? `\n## Context\n\n${opts.context}\n` : ""}${toolsetsBlock}
 
 ## Output format
 
-First, a short **Reasoning** section (under 150 words): identify the core dimensions of this goal (e.g. technical mechanism, comparative analysis, practical constraints, risk factors). Explain how you're splitting them into non-overlapping questions.
+First, a short **Reasoning** section (under 200 words). It must contain TWO numbered subsections:
+
+  1. **Perspectives** — name 2-4 concrete reader/stakeholder archetypes who would care about this goal. Borrowed from STORM (Stanford NAACL 2024): single-perspective plans systematically miss angles. Each perspective is one short noun-phrase plus a 1-line "what they actually want from this report". Avoid generic "the user" / "general reader". Make them specific (e.g. "声学工程师 — 想知道电压余量、谐波失真、阻抗匹配的 hard numbers" / "撤回退坑用户 — 担心二手折损和 3 年后是否还配件可买").
+
+  2. **Decomposition** — explain how you split into non-overlapping questions, and which perspective each question primarily serves. Note: a question can serve multiple perspectives (preferred — denser coverage).
 
 Then output the plan as JSON inside a fenced code block with language "json". Schema:
 
 \`\`\`json
 {
+  "perspectives": [
+    {"id": "P1", "name": "声学工程师", "wants": "电压余量、阻抗匹配、谐波失真等 hard numbers"},
+    {"id": "P2", "name": "撤回退坑用户", "wants": "二手折损率和 3 年后配件可得性"}
+  ],
   "sections": ["TL;DR", "Section B", "..."],
   "questions": [
-    {"id": "Q1", "title": "specific question", "approach": "concrete search strategy + data sources"},
-    {"id": "Q2", "title": "...", "approach": "...", "depends_on": ["Q1"]}
+    {"id": "Q1", "title": "specific question", "approach": "concrete search strategy + data sources", "serves": ["P1", "P2"]},
+    {"id": "Q2", "title": "...", "approach": "...", "serves": ["P2"], "depends_on": ["Q1"]}
   ]
 }
 \`\`\`
@@ -343,6 +352,7 @@ export function thesisPrompt(opts: {
   goal: string;
   planSections: string[];
   findings: { questionId: string; title: string; output: string }[];
+  perspectives?: { id: string; name: string; wants: string }[];
   language?: string;
 }): string {
   const findingsBlock = opts.findings
@@ -350,6 +360,13 @@ export function thesisPrompt(opts: {
     .join("\n\n---\n\n");
 
   const sectionsBlock = opts.planSections.map((s, i) => `${i + 1}. ${s}`).join("\n");
+
+  const perspectivesBlock = opts.perspectives && opts.perspectives.length > 0
+    ? `\n<perspectives>
+The plan identified these reader archetypes (STORM-style perspective mining). Your central_claim and sub_claims must be DEFENSIBLE FROM EACH OF THEIR POVS — i.e. each perspective should find at least one sub_claim directly answering what they wanted.
+${opts.perspectives.map((p) => `- ${p.id} ${p.name}: ${p.wants}`).join("\n")}
+</perspectives>\n`
+    : "";
 
   const langNote = opts.language
     ? `\n\nNote: report will be written in ${opts.language}. Write THIS thesis in English (it's internal to the pipeline). But central_claim and sub_claims should be written in ${opts.language} because they will be quoted verbatim in the report.`
@@ -367,7 +384,7 @@ ${opts.goal}
 These are the sections the report MUST use, in order. You do NOT invent new sections. Your job is to map each section to a sub_claim (or mark it as connective).
 ${sectionsBlock}
 </plan_sections>
-
+${perspectivesBlock}
 <research_findings>
 ${findingsBlock}
 </research_findings>
@@ -532,6 +549,99 @@ ${opts.report}
 // ---------------------------------------------------------------------------
 const MAX_FINDING_CHARS = 2000;
 
+// ---------------------------------------------------------------------------
+// Source-type classification (STORM source-bias-transfer mitigation, NAACL
+// 2024). Categorises every URL in the findings so the writer knows what kind
+// of voice the evidence carries — vendor self-promotion reads differently
+// from independent reviews vs community forums vs primary docs.
+// ---------------------------------------------------------------------------
+export type SourceType =
+  | "vendor"
+  | "review"
+  | "community"
+  | "docs"
+  | "academic"
+  | "news"
+  | "ecommerce"
+  | "other";
+
+const SOURCE_PATTERNS: { type: SourceType; rx: RegExp }[] = [
+  // Academic + research
+  { type: "academic", rx: /(?:arxiv\.org|\.edu(?:\.\w+)?|\.ac\.\w+|semanticscholar|pubmed|pmc\.ncbi|nature\.com|science\.org|ieee\.org|acm\.org|biorxiv|openreview)/i },
+  // Docs / changelogs / source repos
+  { type: "docs", rx: /(?:^docs\.|^developer\.|\/docs\/|github\.com|gitlab\.com|huggingface\.co|kubernetes\.io|readthedocs|api-docs|npmjs\.com|crates\.io|pypi\.org)/i },
+  // Community forums + social
+  { type: "community", rx: /(?:reddit\.com|news\.ycombinator|hn\.algolia|stackoverflow|stackexchange|discord\.com|x\.com|twitter\.com|weibo\.com|zhihu\.com|v2ex\.com|substack\.com|medium\.com)/i },
+  // Independent review sites
+  { type: "review", rx: /(?:rtings|tomshardware|dpreview|photographylife|headfonia|innerfidelity|cameralabs|petapixel|wirecutter|notebookcheck|gsmarena|techspot|audiosciencereview|cnet|engadget|anandtech)/i },
+  // News / trade press
+  { type: "news", rx: /(?:techcrunch|theverge|theinformation|theregister|bloomberg|reuters|ft\.com|wsj\.com|nytimes|36kr|latepost\.com|finance\.sina|caijing|tmtpost|theelec|economist|ars\.technica|wired|stratechery|hackernoon|hackernews\.com)/i },
+  // Ecommerce / pricing
+  { type: "ecommerce", rx: /(?:amazon\.|jd\.com|taobao|tmall|kakaku\.com|hifishark|ebay|bestbuy|newegg|apos\.audio|adorama|bhphotovideo|linsoul|hifigo|aliexpress)/i },
+];
+
+/** When no pattern matches, treat as vendor — conservative fallback because
+ *  unclassified hosts are typically brand product/marketing pages, and the
+ *  mitigation (attribute explicitly, look for independent corroboration)
+ *  is harmless even if the source is actually neutral. */
+function classifyHost(host: string): SourceType {
+  const h = host.toLowerCase().replace(/^www\./, "");
+  for (const p of SOURCE_PATTERNS) {
+    if (p.rx.test(h) || p.rx.test(host)) return p.type;
+  }
+  return "vendor";
+}
+
+function extractHostsFromText(text: string): string[] {
+  const hosts: string[] = [];
+  const rx = /https?:\/\/([^\s)/]+)/gi;
+  let m;
+  while ((m = rx.exec(text)) !== null) hosts.push(m[1]);
+  return hosts;
+}
+
+export interface EvidenceMix {
+  total: number;
+  byType: Record<SourceType, number>;
+  vendorRatio: number;
+  topHosts: { host: string; count: number; type: SourceType }[];
+}
+
+export function classifyEvidenceMix(
+  findings: { output: string }[],
+): EvidenceMix {
+  const hostCounts = new Map<string, number>();
+  for (const f of findings) {
+    for (const host of extractHostsFromText(f.output)) {
+      hostCounts.set(host, (hostCounts.get(host) ?? 0) + 1);
+    }
+  }
+  const byType: Record<SourceType, number> = {
+    vendor: 0,
+    review: 0,
+    community: 0,
+    docs: 0,
+    academic: 0,
+    news: 0,
+    ecommerce: 0,
+    other: 0,
+  };
+  let total = 0;
+  for (const [host, count] of hostCounts) {
+    const type = classifyHost(host);
+    byType[type] += count;
+    total += count;
+  }
+  const vendorish = byType.vendor + byType.ecommerce;
+  const independent = byType.review + byType.community + byType.academic + byType.news;
+  const vendorRatio = total === 0 ? 0 : vendorish / Math.max(vendorish + independent, 1);
+  const topHosts = Array.from(hostCounts.entries())
+    .map(([host, count]) => ({ host, count, type: classifyHost(host) }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 8);
+  return { total, byType, vendorRatio, topHosts };
+}
+
 export function compressFindings(
   findings: { questionId: string; title: string; output: string }[]
 ): { questionId: string; title: string; output: string }[] {
@@ -608,80 +718,93 @@ ${sectionsList}
 ## Research findings
 ${findingsBlock}
 
-## Output format (Markdown, pure skeleton — NO prose paragraphs)
+## Output format (JSON only)
 
-For each section in the list above, produce:
+Output ONE JSON object inside a fenced \`\`\`json block. Schema:
 
-\`\`\`
-## Section: <section name>
-**Key facts to include**:
-- Q#: "verbatim short fact with number or quote"
-- Q#: "..."
-**Length target**: ~NNN words
+\`\`\`json
+{
+  "sections": [
+    {
+      "name": "<section name verbatim from the list>",
+      "key_facts": [
+        { "qid": "Q1", "fact": "specific number or ≤15-word quoted phrase from findings" }
+      ],
+      "target_words": 200
+    }
+  ]
+}
 \`\`\`
 
 ## Rules
-- Section order + names MUST match the list above verbatim.
-- At least 3 key facts per section, each tagged with its Q#.
-- No prose — this is a skeleton.
-${opts.language ? `- Final report will be written in ${opts.language}; section names should be rendered in that language here too.` : ""}`;
+- JSON only. NO markdown sections, NO bold labels, NO prose. The writer reads this as data.
+- \`name\` matches the section list verbatim.
+- \`key_facts\` ≥ 3 per section, each with a number / version / quoted phrase ≤ 15 words.
+${opts.language ? `- The string VALUES go in ${opts.language}. Keys stay English.` : ""}`;
   }
 
   // Thesis-driven path ---------------------------------------------------
+  // Output is JSON — no markdown bold labels for the writer to copy. The
+  // generic neutral key names (main_point / tie_to_previous / tee_up_next)
+  // also don't match the recognised AI-scaffold patterns the writer might
+  // otherwise echo verbatim.
   const t = opts.thesis;
   const subClaimsBlock = t.sub_claims
-    .map((sc) => `- **${sc.id}**: ${sc.text}  *(supported by: ${sc.evidence_from.join(", ")})*`)
+    .map((sc) => `  ${sc.id}: ${sc.text}  (supported by ${sc.evidence_from.join(", ")})`)
     .join("\n");
   const sectionPlanBlock = t.section_plan
-    .map((e, i) => `${i + 1}. **${e.section}** — sub_claim: ${e.sub_claim ?? "(connective)"}  role: ${e.role}`)
+    .map((e, i) => `  ${i + 1}. ${e.section}  →  sub_claim: ${e.sub_claim ?? "(connective)"}  role: ${e.role}`)
     .join("\n");
 
-  return `# Report outline (thesis-driven)
+  return `# Report outline (thesis-driven, JSON output)
 
-Translate the approved thesis into a writable skeleton. The draft writer will follow this exactly.
+Translate the approved thesis into a structured planning sheet. The writer reads this as JSON — so NEVER use prose paragraphs or markdown bold labels in your output. JSON keys only.
 
 ## Goal
 ${opts.goal}
 
-## Central claim (MUST be paraphrased in TL;DR by the draft)
+## Central claim (writer paraphrases this in TL;DR opening)
 ${t.central_claim}
 
 ## Sub-claims
 ${subClaimsBlock}
 
-## Section plan (order and names are FIXED)
+## Section plan (order and names FIXED)
 ${sectionPlanBlock}
 
 ## Research findings (reference by Q#)
 ${findingsBlock}
 
-## Output format (Markdown, pure skeleton — NO prose)
+## Output format
 
-For each section in the section_plan, produce this block:
+Output ONE JSON object inside a fenced \`\`\`json block. Schema:
 
+\`\`\`json
+{
+  "sections": [
+    {
+      "name": "<section name verbatim from section_plan>",
+      "sub_claim_id": "C1" | "connective",
+      "main_point": "<for content sections: a paraphrase of the sub_claim — what this section drives at; one sentence>",
+      "tie_to_previous": "<concrete noun / data point this section's first sentence shares with the previous section's last sentence — null for the opening section>",
+      "tee_up_next": "<concrete noun / data point this section's last sentence shares with the next section's first sentence — null for the final section>",
+      "key_facts": [
+        { "qid": "Q1", "fact": "specific number or ≤15-word quoted phrase from findings" }
+      ],
+      "target_words": 200
+    }
+  ]
+}
 \`\`\`
-## Section: <section name verbatim>  (carries <sub_claim id or "connective">)
-
-**Section claim**: <for content sections: sub_claim text verbatim or a tight paraphrase>
-**Connection IN**: <concrete anchor word/phrase this section's first sentence MUST contain>
-**Connection OUT**: <concrete hook word/phrase this section's last sentence MUST contain (omit for final section)>
-**Key facts to include**:
-- Q#: "specific number or quoted phrase from findings"
-- Q#: "..."
-- Q#: "..."
-**Length target**: ~NNN words
-\`\`\`
-
-For the FIRST section (typically TL;DR), only Connection OUT is required — it opens the report, nothing precedes it.
-For the LAST section, only Connection IN is required — it closes the report.
 
 ## Hard rules
-- Section names + order MUST match section_plan verbatim.
-- Connection IN/OUT MUST be concrete anchor words (domain-specific nouns or phrases). Forbidden: "承接上文", "as mentioned above", "furthermore", "in conclusion", "building on".
-- Each section ≥3 key facts, each tagged with Q#, each containing a specific number or ≤15-word quoted phrase (not "discussion of X").
-- If total sections < 3, Connection IN/OUT for middle sections may be merged into one line.
-${opts.language ? `- Section names rendered in ${opts.language}.` : ""}
-- This is a skeleton, not a draft. No paragraphs of prose.`;
+- JSON only — NO markdown sections, NO bold labels, NO prose paragraphs in your output. The writer will read this as data, not text.
+- \`name\` matches section_plan verbatim.
+- \`tie_to_previous\` / \`tee_up_next\` are CONCRETE NOUNS (a number, a product version, a person, a specific concept that just appeared in the previous/next section). Forbidden values: "承接上文", "as mentioned above", "furthermore", "in conclusion", "building on", "另一方面", "上文提到".
+- \`key_facts\` ≥ 3 per content section, each with a number / version / quoted phrase ≤15 words (NOT "discussion of X" / "background on Y").
+- Final section: \`tee_up_next\` is null; in its place the writer will produce a "so what" judgment.
+- TL;DR section: \`tie_to_previous\` is null.
+${opts.language ? `- The string VALUES in the JSON should be in ${opts.language} (matching the report language). Keys stay English.` : ""}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -703,17 +826,22 @@ export function draftPrompt(opts: {
 
   const sectionsList = opts.plan.sections.map((s, i) => `${i + 1}. ${s}`).join("\n");
 
+  // Outline is JSON. Treat it strictly as data — JSON keys must NEVER appear
+  // as markdown headings or bold labels in the report. The instruction is
+  // shorter now because the JSON format itself is structurally distinct from
+  // the report's markdown — there's no surface to copy from.
   const outlineBlock = opts.outline
-    ? `\n\n## Internal outline — DO NOT COPY OR QUOTE
+    ? `\n\n<internal_planning>
+This is data, not text. Read the JSON to decide structure, transitions,
+and which Q# facts go where. Do not print JSON, do not print field names
+("main_point", "tie_to_previous", "tee_up_next", "key_facts"), do not print
+quoted JSON strings as bullet items. Translate \`tie_to_previous\` / \`tee_up_next\`
+into a NATURAL sentence that just happens to include that noun.
 
-This is your private planning sheet. Use it to decide structure, transitions, and key facts.
-NEVER copy field names ("Section claim", "Connection IN", "Connection OUT", "Key facts", "Length target", "Sub-claim", "小结论", "Signal vs noise") into the published report.
-NEVER print the IN/OUT anchor words as a labeled bullet line — they MUST appear inside natural prose sentences in the section's first/last sentences.
-The reader must never see this scaffold.
-
-\`\`\`
+\`\`\`json
 ${opts.outline}
 \`\`\`
+</internal_planning>
 
 `
     : "";
@@ -723,6 +851,39 @@ ${opts.outline}
     ? buildNarrativeArcBlock(opts.thesis)
     : "";
 
+  // Perspectives block: passes the planner's reader archetypes through to
+  // the writer, so prose can be checked against multiple POVs in one head.
+  const perspectivesBlock =
+    opts.plan.perspectives && opts.plan.perspectives.length > 0
+      ? `\n<readers>
+This report has multiple readers. Before each major paragraph, ask: "does this answer ANY of these readers' actual question?" If a paragraph serves none of them, it's filler — cut.
+${opts.plan.perspectives.map((p) => `- ${p.name}: ${p.wants}`).join("\n")}
+</readers>\n`
+      : "";
+
+  // Evidence-mix block: STORM identified "source bias transfer" as a
+  // primary failure mode — if 60% of evidence is vendor self-promotion the
+  // report inherits vendor voice. Surface the mix so the writer knows.
+  const mix = classifyEvidenceMix(opts.findings);
+  const evidenceMixBlock =
+    mix.total > 0
+      ? `\n<evidence_mix>
+The research findings cite ${mix.total} URL${mix.total === 1 ? "" : "s"}. Source-type breakdown:
+${(Object.entries(mix.byType) as [SourceType, number][])
+  .filter(([, n]) => n > 0)
+  .sort((a, b) => b[1] - a[1])
+  .map(([t, n]) => `- ${t}: ${n} (${Math.round((100 * n) / mix.total)}%)`)
+  .join("\n")}
+Top hosts: ${mix.topHosts.map((h) => `${h.host}[${h.type}]×${h.count}`).join(", ")}
+
+${
+  mix.vendorRatio >= 0.5
+    ? `⚠ ${Math.round(mix.vendorRatio * 100)}% of evidence is vendor / e-commerce material. Their voice is promotional ("市场领先""创新性""旗舰""极致体验"). DO NOT carry that voice into the report. When a vendor source makes a strong claim, attribute it explicitly ("Sennheiser 自己的页面写…") and look for whether independent reviews / forums confirm or contradict.`
+    : `When a claim comes from a vendor / e-commerce source, attribute explicitly ("XX 官方页面"). When two source types (vendor vs review vs community) disagree on the same fact, name the disagreement; don't quietly pick one.`
+}
+</evidence_mix>\n`
+      : "";
+
   return `# Write the report
 
 ## Goal
@@ -730,7 +891,7 @@ ${opts.goal}
 
 ${opts.context ? `## Context\n\n${opts.context}\n\n` : ""}## Planned sections
 ${sectionsList}
-
+${perspectivesBlock}${evidenceMixBlock}
 ## Research findings
 ${findingsBlock}${outlineBlock}${narrativeBlock}
 
@@ -756,9 +917,10 @@ Central claim: ${thesis.central_claim}
 Sub-claims (one per content section):
 ${subClaims}
 
-Apply this arc the way the reference report applies its arc — invisibly.
-Transition words from outline (Connection IN / OUT) are private hints; they
-must NEVER appear as visible text.
+Apply this arc the way the reference voice anchors apply theirs — invisibly.
+The outline JSON's \`tie_to_previous\` and \`tee_up_next\` values are nouns
+to weave into the section's first/last sentences; they are NOT labels and
+must NEVER appear as bullets, bold lines, or section subheadings.
 
 Section headings: use plan.sections names verbatim. Never use "Q1: ..." /
 "Question 1:" / "问题一：" — research question IDs are internal.
@@ -916,8 +1078,8 @@ export function editorPrompt(opts: {
 ## Do NOT disturb (narrative arc must survive the edit)
 - Do NOT change section heading text.
 - Do NOT remove or rephrase the TL;DR opening sentence.
-- Keep the IN/OUT anchor words present in each section's first/last sentences (they make the flow work). But these should already be embedded in prose — if the writer left visible labels like \`**IN —**\` / \`**OUT —**\` / \`**Connection IN:**\` / \`**Section claim:**\` / \`**小结论：**\`, REMOVE the label and weave the anchor word naturally into the surrounding sentence.
-- Strike standalone "Signal vs noise" subheadings or tables — fold them back into the section's prose.
+- Section first/last sentences carry the cross-section flow (a shared noun ties to the previous/next section). Keep that noun in place. If the writer left visible scaffold labels — \`**IN —**\` / \`**OUT —**\` / \`**Connection IN:**\` / \`**Section claim:**\` / \`**Sub-claim：**\` / \`**小结论：**\` / \`tie_to_previous\` / \`tee_up_next\` — STRIP the label and rewrite the line as natural prose that still contains the linking noun.
+- Strike standalone "Signal vs noise" subheadings or tables — fold them back into prose.
 - Do NOT remove the final "so what" statement.
 Your job is language, not structure.`
     : "";
@@ -962,15 +1124,15 @@ export function reviseInstructionPrompt(opts: {
 **Central claim**: ${opts.thesis.central_claim}
 
 Your revision MUST preserve:
-- TL;DR opening that paraphrases the central_claim
+- TL;DR opening as a flat declarative paraphrase of the central_claim
 - Section headings matching plan.sections verbatim
-- The IN/OUT anchor words EMBEDDED in each section's first/last sentences (transitions). DO NOT print "**IN —**", "**OUT —**", "**Connection IN:**", or any label as visible text — weave the anchor word into prose.
-- Sub-claim advance per section, also as natural prose (no "**Section claim:**", "**小结论**" labels).
-- Final "so what"
+- Cross-section flow: a shared noun in the first/last sentences of each section (the outline JSON's \`tie_to_previous\` / \`tee_up_next\` values). These nouns weave INTO prose — they are NOT labels.
+- Each section advancing its sub-claim once, inline.
+- Final "so what" judgment.
 
-If the previous draft contained visible scaffold labels (printed "IN —", "OUT —", "Connection IN/OUT", "Section claim", "小结论", "信号 vs 噪音" subheadings/tables), STRIP them and rewrite that sentence as natural prose. Keep the analytical content, lose the label.
+If the previous draft printed visible scaffold labels (\`**IN —**\`, \`**OUT —**\`, \`**Connection IN/OUT**\`, \`**Section claim**\`, \`**Sub-claim：**\`, \`**小结论：**\`, \`### Signal vs noise\`, \`### 信号 vs 噪音\`, or quoted JSON keys like \`tie_to_previous\`), STRIP the label and rewrite the line as natural prose that still carries the analytical content.
 
-If the critique flagged narrative issues (tagged N1–N6 or scaffold issues), fix THOSE specifically — do not rewrite sections that are already working.`
+If the critique flagged narrative issues (tagged N1–N5), fix THOSE specifically — do not rewrite sections that are already working.`
     : "";
 
   return `# Revise your draft based on the critique above
@@ -1237,20 +1399,56 @@ export function parsePlan(raw: string): Plan | null {
       const questions = parsed.questions
         .filter((q: unknown) => typeof q === "object" && q !== null && "title" in (q as object))
         .slice(0, 8)
-        .map((q: { id?: string; title: string; approach?: string; depends_on?: unknown }, i: number) => {
-          const depsRaw = Array.isArray(q.depends_on) ? q.depends_on : [];
-          const depends_on = depsRaw.filter((d: unknown): d is string => typeof d === "string" && d.length > 0);
-          return {
-            id: q.id || `Q${i + 1}`,
-            title: String(q.title),
-            approach: String(q.approach || "Search web and cite primary sources."),
-            ...(depends_on.length > 0 ? { depends_on } : {}),
-          };
-        });
+        .map(
+          (
+            q: { id?: string; title: string; approach?: string; depends_on?: unknown; serves?: unknown },
+            i: number,
+          ) => {
+            const depsRaw = Array.isArray(q.depends_on) ? q.depends_on : [];
+            const depends_on = depsRaw.filter(
+              (d: unknown): d is string => typeof d === "string" && d.length > 0,
+            );
+            const servesRaw = Array.isArray(q.serves) ? q.serves : [];
+            const serves = servesRaw.filter(
+              (s: unknown): s is string => typeof s === "string" && s.length > 0,
+            );
+            return {
+              id: q.id || `Q${i + 1}`,
+              title: String(q.title),
+              approach: String(q.approach || "Search web and cite primary sources."),
+              ...(depends_on.length > 0 ? { depends_on } : {}),
+              ...(serves.length > 0 ? { serves } : {}),
+            };
+          },
+        );
       if (questions.length === 0) continue;
+
+      // Optional perspectives block (STORM-style; only populated when planner
+      // emits it — old cached plans without perspectives still work).
+      const perspectivesRaw = Array.isArray(parsed.perspectives) ? parsed.perspectives : [];
+      const perspectives = perspectivesRaw
+        .filter(
+          (p: unknown) =>
+            typeof p === "object" &&
+            p !== null &&
+            typeof (p as { name?: unknown }).name === "string",
+        )
+        .slice(0, 5)
+        .map(
+          (
+            p: { id?: string; name: string; wants?: string },
+            i: number,
+          ) => ({
+            id: p.id || `P${i + 1}`,
+            name: String(p.name),
+            wants: String(p.wants || ""),
+          }),
+        );
+
       return {
         sections: sections.length > 0 ? sections : ["TL;DR", "Details", "References"],
         questions,
+        ...(perspectives.length > 0 ? { perspectives } : {}),
       };
     }
   }
@@ -1308,7 +1506,9 @@ export function parseThesis(raw: string): ParsedThesis | null {
   return null;
 }
 
-function tryParse(text: string): { sections?: unknown; questions?: unknown } | null {
+function tryParse(
+  text: string,
+): { sections?: unknown; questions?: unknown; perspectives?: unknown } | null {
   try { return JSON.parse(text); } catch { /* fall through */ }
   try { return JSON.parse(jsonrepair(text)); } catch { /* fall through */ }
   return null;
