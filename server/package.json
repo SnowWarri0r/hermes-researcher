@@ -6,7 +6,9 @@
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "start": "tsx src/index.ts",
-    "build": "tsc"
+    "build": "tsc",
+    "snapshot": "tsx test/prompt-snapshot.ts",
+    "snapshot:update": "tsx test/prompt-snapshot.ts --update"
   },
   "dependencies": {
     "@hono/node-server": "^1.13.7",

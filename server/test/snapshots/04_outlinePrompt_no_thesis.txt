@@ -1,0 +1,61 @@
+# Report outline
+
+Build a per-section skeleton for the final report BEFORE prose is written.
+
+## Goal
+调研一下 Sony A7M5 同等价位相机，性价比最高，参数最好，最适合在 live 等暗光抓拍人像。
+
+## Sections (in order)
+1. TL;DR
+2. 暗光性能
+3. 对比同价位
+4. 二手与镜头
+
+## Research findings
+### Q1: A7M5 ISO 表现
+
+DPReview studio scene shows A7M5 ISO 3200 luminance noise +0.3 stops vs A7IV
+([DPReview](https://www.dpreview.com/products/sony/slrs/sony_a7m5)).
+Photons-to-Photos PDR at base ISO is 11.4 EV
+([P2P chart](https://www.photonstophotos.net/Charts/PDR.htm)).
+
+B&H reviewer noted: "tracking on backlit faces drops at ISO 6400, the
+detection box flickers" ([B&H review](https://www.bhphotovideo.com/explora/photography/hands-on-review/sony-a7m5)).
+
+---
+
+### Q2: Z6III vs R6II 同价位对比
+
+Nikon Z6III 24MP partially-stacked sensor, 1/250s readout
+([Nikon press](https://www.nikonusa.com/press-room/nikon-z6iii)).
+
+R6II 24MP non-stacked, 1/63s readout — slower for fast subjects
+([Canon spec](https://www.usa.canon.com/cameras/eos-r6-mark-ii/spec)).
+
+Reddit r/photography thread on A7M5 镜头 selection: most quoted is
+the 35mm f/1.8 G as the workhorse for live abstract shots
+([Reddit](https://www.reddit.com/r/sonyalpha/comments/abc123)).
+
+## Output format (JSON only)
+
+Output ONE JSON object inside a fenced ```json block. Schema:
+
+```json
+{
+  "sections": [
+    {
+      "name": "<section name verbatim from the list>",
+      "key_facts": [
+        { "qid": "Q1", "fact": "specific number or ≤15-word quoted phrase from findings" }
+      ],
+      "target_words": 200
+    }
+  ]
+}
+```
+
+## Rules
+- JSON only. NO markdown sections, NO bold labels, NO prose. The writer reads this as data.
+- `name` matches the section list verbatim.
+- `key_facts` ≥ 3 per section, each with a number / version / quoted phrase ≤ 15 words.
+- The string VALUES go in Chinese (简体中文). Keys stay English.

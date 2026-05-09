@@ -42,6 +42,13 @@ function statusDot(status: PhaseStatus): string {
   }
 }
 
+function formatTokenShort(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 10_000) return `${(n / 1000).toFixed(0)}k`;
+  if (n >= 1000) return `${(n / 1000).toFixed(1)}k`;
+  return String(n);
+}
+
 function useElapsedTick(active: boolean): number | undefined {
   const [now, setNow] = useState<number | undefined>(active ? Date.now() : undefined);
   useEffect(() => {
@@ -180,11 +187,21 @@ function PhaseRow({
         <span className="text-[13px] text-snow flex-1 min-w-0 break-words" title={phase.label}>
           {phase.label}
         </span>
-        {phase.usage?.total_tokens !== undefined && (
-          <span className="text-[10px] font-mono text-slate-steel shrink-0">
-            {phase.usage.total_tokens > 1000
-              ? `${(phase.usage.total_tokens / 1000).toFixed(1)}k`
-              : phase.usage.total_tokens}
+        {(phase.usage?.input_tokens !== undefined ||
+          phase.usage?.output_tokens !== undefined) && (
+          <span
+            className="text-[10px] font-mono text-slate-steel shrink-0 inline-flex items-center"
+            title={`input: ${(phase.usage?.input_tokens ?? 0).toLocaleString()} · output: ${(phase.usage?.output_tokens ?? 0).toLocaleString()}`}
+          >
+            <span className="tabular-nums">
+              {formatTokenShort(phase.usage?.input_tokens ?? 0)}
+            </span>
+            <span className="text-slate-steel/40">↑</span>
+            <span className="text-slate-steel/40 mx-0.5">/</span>
+            <span className="tabular-nums">
+              {formatTokenShort(phase.usage?.output_tokens ?? 0)}
+            </span>
+            <span className="text-slate-steel/40">↓</span>
           </span>
         )}
         {duration && (
