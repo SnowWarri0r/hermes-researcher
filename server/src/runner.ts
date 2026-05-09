@@ -1074,7 +1074,9 @@ async function evaluateReportQuality(
         ? Math.round(parsed.score)
         : Math.round(computed);
 
-    // Locally enforce the pass rule from the prompt: every dim ≥6, score ≥7.
+    // Locally enforce the pass rule. DEER 2026 anchors: <6.5 = poor,
+    // 6.5-7.3 = acceptable, ≥7.3 = good. We require ≥7 (acceptable upper)
+    // as a minimum so we don't ship "barely acceptable" reports.
     const dimsOk = comp >= 6 && insi >= 6 && inst >= 6 && read >= 6;
     const pass =
       typeof parsed.pass === "boolean"

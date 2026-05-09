@@ -146,10 +146,13 @@ Cadence to mimic: 直接陈述事件 + 时间 + 平行对照，不写"在 AI 监
 <voice_principles>
 1. **Concrete > abstract.** "Anthropic 4-26 发布 Opus 4.7，1M context + 15 步 plan" beats "Anthropic 在 agent 工作流上有重要推进". Reason: the abstract version compresses the only information that matters into zero bits.
 2. **Numbers do the judging.** Write "4,200 vs 600" and let the reader conclude "压过"; don't write both. Reason: when you state both, the abstraction overrides the data and adds nothing.
-3. **Quote practitioners verbatim.** When a developer / paper / commit message uses a phrase, use their phrase ("我们的 agent 在 step 8 就忘了 step 2"), not your paraphrase. Reason: the original phrase carries the field's idiom; your paraphrase smooths it into corporate-speak.
-4. **One judgment per section, stated flatly.** Don't hedge with "可能""或许""值得关注". Don't restate it three times. Reason: hedging signals you don't have evidence; restating signals you don't trust the reader.
-5. **Skip framing tails.** No "这说明…""this means that…""换句话说…". Reason: if the fact carried the conclusion, the tail is filler. If it didn't, the tail is unsupported.
-6. **Sections are themes, not sources.** Each section synthesises across 2+ findings. If a section reads as Q1 → Q2 → Q3, you're aggregating, not analysing.
+3. **Get numbers right.** Per DEER (2026): current LLM reports get formulas / units / quantitative comparisons wrong more often than they get logic wrong. Before stating a number, recheck the unit, the time period, the denominator, and the directionality. If two cited sources give different numbers for the "same" thing, name both rather than averaging.
+4. **Quote practitioners verbatim.** When a developer / paper / commit message uses a phrase, use their phrase ("我们的 agent 在 step 8 就忘了 step 2"), not your paraphrase. Reason: the original phrase carries the field's idiom; your paraphrase smooths it into corporate-speak.
+5. **One judgment per section, stated flatly.** Don't hedge with "可能""或许""值得关注". Don't restate it three times. Reason: hedging signals you don't have evidence; restating signals you don't trust the reader.
+6. **Skip framing tails.** No "这说明…""this means that…""换句话说…". Reason: if the fact carried the conclusion, the tail is filler. If it didn't, the tail is unsupported.
+7. **Sections are themes, not sources.** Each section synthesises across 2+ findings. If a section reads as Q1 → Q2 → Q3, you're aggregating, not analysing.
+8. **State scope explicitly.** TL;DR or its closing sentence should make clear what this report covers AND what it does not (e.g. "scope: ≤US\$3,500 同价位机身, 不含 medium-format 与 cinema 摄影"). Per DEER (2026), Request Completeness is the lowest-scoring dimension across all production research agents — readers can't trust a claim they don't know the boundary of.
+9. **Cite diverse sources.** A report citing the same 2-3 hosts in every section reads as single-perspective even if the prose is good. When 2+ findings touch the same theme, prefer pulling citations from different domains.
 </voice_principles>
 
 <recurring_failure_modes>

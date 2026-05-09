@@ -145,10 +145,13 @@ Cadence to mimic: 直接陈述事件 + 时间 + 平行对照，不写"在 AI 监
 <voice_principles>
 1. **Concrete > abstract.** "Anthropic 4-26 发布 Opus 4.7，1M context + 15 步 plan" beats "Anthropic 在 agent 工作流上有重要推进". Reason: the abstract version compresses the only information that matters into zero bits.
 2. **Numbers do the judging.** Write "4,200 vs 600" and let the reader conclude "压过"; don't write both. Reason: when you state both, the abstraction overrides the data and adds nothing.
-3. **Quote practitioners verbatim.** When a developer / paper / commit message uses a phrase, use their phrase ("我们的 agent 在 step 8 就忘了 step 2"), not your paraphrase. Reason: the original phrase carries the field's idiom; your paraphrase smooths it into corporate-speak.
-4. **One judgment per section, stated flatly.** Don't hedge with "可能""或许""值得关注". Don't restate it three times. Reason: hedging signals you don't have evidence; restating signals you don't trust the reader.
-5. **Skip framing tails.** No "这说明…""this means that…""换句话说…". Reason: if the fact carried the conclusion, the tail is filler. If it didn't, the tail is unsupported.
-6. **Sections are themes, not sources.** Each section synthesises across 2+ findings. If a section reads as Q1 → Q2 → Q3, you're aggregating, not analysing.
+3. **Get numbers right.** Per DEER (2026): current LLM reports get formulas / units / quantitative comparisons wrong more often than they get logic wrong. Before stating a number, recheck the unit, the time period, the denominator, and the directionality. If two cited sources give different numbers for the "same" thing, name both rather than averaging.
+4. **Quote practitioners verbatim.** When a developer / paper / commit message uses a phrase, use their phrase ("我们的 agent 在 step 8 就忘了 step 2"), not your paraphrase. Reason: the original phrase carries the field's idiom; your paraphrase smooths it into corporate-speak.
+5. **One judgment per section, stated flatly.** Don't hedge with "可能""或许""值得关注". Don't restate it three times. Reason: hedging signals you don't have evidence; restating signals you don't trust the reader.
+6. **Skip framing tails.** No "这说明…""this means that…""换句话说…". Reason: if the fact carried the conclusion, the tail is filler. If it didn't, the tail is unsupported.
+7. **Sections are themes, not sources.** Each section synthesises across 2+ findings. If a section reads as Q1 → Q2 → Q3, you're aggregating, not analysing.
+8. **State scope explicitly.** TL;DR or its closing sentence should make clear what this report covers AND what it does not (e.g. "scope: ≤US\\$3,500 同价位机身, 不含 medium-format 与 cinema 摄影"). Per DEER (2026), Request Completeness is the lowest-scoring dimension across all production research agents — readers can't trust a claim they don't know the boundary of.
+9. **Cite diverse sources.** A report citing the same 2-3 hosts in every section reads as single-perspective even if the prose is good. When 2+ findings touch the same theme, prefer pulling citations from different domains.
 </voice_principles>
 
 <recurring_failure_modes>
@@ -966,6 +969,9 @@ List at most 6 concrete issues. Each under 25 words. Prioritize structural/voice
 6. **Per-section formula stamping**: do 2+ sections share the same bold-line opener template? Flag.
 7. **Hedging without cause**: "may" / "might" / "某种程度上" / "或许" without evidence? Flag.
 8. **Meta-tail**: paragraph ends with "这说明…" / "this means that…"? Flag — the fact should carry the conclusion.
+9. **Request scope missing** (DEER 2026 — lowest-scoring dimension across production agents): does TL;DR or its closing sentence explicitly state what this report covers AND what it does NOT? If absent, flag with where to add it.
+10. **Numeric-claim sloppiness**: any quantitative claim (%, USD, ms, params) where the unit is ambiguous, the time period is implicit, the denominator is unstated, or the direction (improvement vs degradation) isn't clear? Flag — DEER finds these are more common errors than logic flaws.
+11. **Citation diversity**: ≥70% of citations point to the same 2-3 hosts? If yes, flag — single-host reports read as single-perspective even when prose is fine.
 `;
 }
 
@@ -1009,7 +1015,7 @@ ${opts.goal}
 
 ## Output
 
-List at most 8 concrete issues, each under 25 words. Prioritize structural/voice problems over typos.${thesisBlock}
+List at most 10 concrete issues, each under 25 words. Prioritize structural/voice problems over typos.${thesisBlock}
 
 ## Default checks — quote the offending sentence for each
 1. **Concrete-claim deficit**: any claim without date / version / number / quoted phrase / named source? Flag.
@@ -1019,6 +1025,9 @@ List at most 8 concrete issues, each under 25 words. Prioritize structural/voice
 5. **Printed scaffolding**: \`**IN —**\` / \`**OUT —**\` / \`**Section claim:**\` / \`**Sub-claim：**\` / \`**小结论：**\` / \`### Signal vs noise\`. Flag each.
 6. **Per-section formula** (2+ sections same opener template). Flag.
 7. **Hedging without cause** / **meta-tail** ("这说明…" / "this means that…"). Flag.
+8. **Request scope missing** (DEER 2026): does TL;DR or its closer state what's covered AND what's NOT? If absent, flag.
+9. **Numeric sloppiness**: ambiguous unit / implicit time period / unstated denominator / direction unclear? Flag.
+10. **Citation concentration**: ≥70% of citations to same 2-3 hosts? Flag.
 `;
 }
 

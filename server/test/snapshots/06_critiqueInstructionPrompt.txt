@@ -6,7 +6,7 @@
 
 ## Output
 
-List at most 8 concrete issues, each under 25 words. Prioritize structural/voice problems over typos.
+List at most 10 concrete issues, each under 25 words. Prioritize structural/voice problems over typos.
 
 ## Narrative arc (mandatory checks — thesis is non-null)
 
@@ -37,3 +37,6 @@ Report failures as "N1: ..." with the offending sentence quoted, so revise can t
 5. **Printed scaffolding**: `**IN —**` / `**OUT —**` / `**Section claim:**` / `**Sub-claim：**` / `**小结论：**` / `### Signal vs noise`. Flag each.
 6. **Per-section formula** (2+ sections same opener template). Flag.
 7. **Hedging without cause** / **meta-tail** ("这说明…" / "this means that…"). Flag.
+8. **Request scope missing** (DEER 2026): does TL;DR or its closer state what's covered AND what's NOT? If absent, flag.
+9. **Numeric sloppiness**: ambiguous unit / implicit time period / unstated denominator / direction unclear? Flag.
+10. **Citation concentration**: ≥70% of citations to same 2-3 hosts? Flag.
