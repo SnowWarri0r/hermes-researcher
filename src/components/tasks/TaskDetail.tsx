@@ -7,7 +7,6 @@ import rehypeKatex from "rehype-katex";
 import { useTaskStore } from "../../store/tasks";
 import { StatusBadge } from "../common/Badge";
 import { Tooltip } from "../common/Tooltip";
-import { UsageTooltip } from "../common/UsageTooltip";
 import { PipelineView } from "./PipelineView";
 import { PipelineDAG } from "./PipelineDAG";
 import { EventLogTail } from "./EventLogTail";
@@ -193,6 +192,23 @@ export function TaskDetail() {
     ? ((task.completedAt - task.createdAt) / 1000).toFixed(1)
     : null;
 
+  // Per-phase token sums for the currently viewed turn. More accurate than
+  // task.usage which only reflects the latest single phase in some cases;
+  // this rolls up every phase the user can see in the pipeline view.
+  const phaseSums = (viewingTurn?.phases ?? []).reduce(
+    (acc, p) => {
+      acc.input += p.usage?.input_tokens ?? 0;
+      acc.output += p.usage?.output_tokens ?? 0;
+      acc.phaseCount += 1;
+      return acc;
+    },
+    { input: 0, output: 0, phaseCount: 0 },
+  );
+  // Sonnet 4 rates as a neutral default ($3 / M input, $15 / M output).
+  // The assumption is shown next to the figure so users know it's an estimate.
+  const estCostUsd =
+    (phaseSums.input * 3 + phaseSums.output * 15) / 1_000_000;
+
   async function handleChain() {
     const g = chainGoal.trim();
     if (!g || chainSending) return;
@@ -263,15 +279,38 @@ export function TaskDetail() {
               <Chip label="mode" value={task.mode} accent={task.mode === "deep"} />
               {task.turnCount > 1 && <Chip label="version" value={`v${task.turnCount}`} />}
               {totalDuration && <Chip label="elapsed" value={`${totalDuration}s`} />}
-              {(task.usage?.input_tokens !== undefined || task.usage?.output_tokens !== undefined) && (
-                <Tooltip content={<UsageTooltip usage={task.usage} />}>
+              {(phaseSums.input > 0 || phaseSums.output > 0) && (
+                <Tooltip
+                  content={
+                    <div className="text-[11px] leading-relaxed">
+                      <div className="font-mono">
+                        Σ over {phaseSums.phaseCount} phase
+                        {phaseSums.phaseCount === 1 ? "" : "s"} · turn v{(viewingTurn?.seq ?? 0) + 1}
+                      </div>
+                      <div className="font-mono mt-1">
+                        in · {phaseSums.input.toLocaleString()}
+                      </div>
+                      <div className="font-mono">
+                        out · {phaseSums.output.toLocaleString()}
+                      </div>
+                      <div className="font-mono mt-1.5 pt-1.5 border-t border-charcoal-subtle text-emerald-signal">
+                        ≈ ${estCostUsd.toFixed(3)} (Sonnet 4 rates)
+                      </div>
+                    </div>
+                  }
+                >
                   <span className="text-[10px] font-mono px-2 py-1 rounded bg-carbon border border-charcoal-subtle cursor-help inline-flex items-center gap-1.5">
                     <span className="text-slate-steel">tokens</span>
                     <span className="text-parchment">
-                      {(task.usage.input_tokens ?? 0).toLocaleString()}↑
+                      {phaseSums.input.toLocaleString()}↑
                       <span className="text-slate-steel mx-1">/</span>
-                      {(task.usage.output_tokens ?? 0).toLocaleString()}↓
+                      {phaseSums.output.toLocaleString()}↓
                     </span>
+                    {estCostUsd > 0.001 && (
+                      <span className="text-emerald-signal/80 ml-1 border-l border-charcoal-subtle pl-1.5">
+                        ≈${estCostUsd.toFixed(estCostUsd >= 1 ? 2 : 3)}
+                      </span>
+                    )}
                   </span>
                 </Tooltip>
               )}
