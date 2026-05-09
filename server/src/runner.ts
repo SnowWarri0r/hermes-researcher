@@ -33,7 +33,10 @@ import {
   parsePlan,
   isMinorRefinement,
   stripScaffoldLabels,
+  claimAuditPrompt,
+  parseClaimAudit,
 } from "./prompt.ts";
+import type { UnsupportedClaim } from "./prompt.ts";
 import type {
   Phase,
   PhaseKind,
@@ -591,13 +594,19 @@ async function runStandardMode(
     critiqueOutput = critiqueResult.output;
   }
 
-  // ── Revise (seq=6, single pass — no quality loop in standard mode) ──
-  const revisePhase = store.addPhase({ turnId: opts.turnId, seq: 6, branch: 0, kind: "revise", label: "Final revision", createdAt: Date.now() });
+  // ── Claim audit (seq=6) — verifiable-content check before revise ──
+  const stdFindingTitles = findings.map((f) => ({ questionId: f.questionId, title: f.title }));
+  const stdAudit = await runClaimAudit(opts, 6, draftOutput, stdFindingTitles);
+  usages.push(stdAudit.usage);
+
+  // ── Revise (seq=7, single pass — no quality loop in standard mode) ──
+  const revisePhase = store.addPhase({ turnId: opts.turnId, seq: 7, branch: 0, kind: "revise", label: "Final revision", createdAt: Date.now() });
   const reviseResult = await runPhase({
     taskId: opts.taskId, phaseId: revisePhase.id, kind: "revise",
     prompt: reviseInstructionPrompt({
       goal: opts.goal, toolsets: opts.toolsets, language: opts.language,
       thesis, outline: outlineText,
+      unsupportedClaims: stdAudit.unsupported,
     }),
     conversationHistory: [
       { role: "user", content: "Write a draft report." },
@@ -608,10 +617,10 @@ async function runStandardMode(
   });
   usages.push(reviseResult.usage);
 
-  // ── Style gate (seq=7) — cheap copy-edit pass, mirrors deep mode's editor.
+  // ── Style gate (seq=8) — cheap copy-edit pass, mirrors deep mode's editor.
   // Strips visible scaffold labels and tightens AI voice without restructuring.
   const styleGatePhase = store.addPhase({
-    turnId: opts.turnId, seq: 7, branch: 0, kind: "revise", label: "Copy edit",
+    turnId: opts.turnId, seq: 8, branch: 0, kind: "revise", label: "Copy edit",
     createdAt: Date.now(),
   });
   const styleGateResult = await runPhaseLite({
@@ -721,10 +730,18 @@ async function runDeepMode(
     critiqueOutput = critiqueResult.output;
   }
 
-  // ── Revise + quality loop (seqOffset starts at 6) ──
+  // ── Claim audit (seq=6) — verifiable-content check on the draft.
+  // Cheap focused pass; output goes into revise so it fixes specific
+  // unsupported sentences instead of rewriting whole sections.
+  const findingTitles = findings.map((f) => ({ questionId: f.questionId, title: f.title }));
+  const auditResult = await runClaimAudit(opts, 6, draftOutput, findingTitles);
+  usages.push(auditResult.usage);
+
+  // ── Revise + quality loop (seqOffset starts at 7 now, after audit) ──
   let currentDraft = draftOutput;
   let currentCritique = critiqueOutput;
-  let seqOffset = 6;
+  let currentUnsupported = auditResult.unsupported;
+  let seqOffset = 7;
   let finalRevision = draftOutput;
 
   for (let iteration = 0; iteration <= MAX_QUALITY_ITERATIONS; iteration++) {
@@ -737,6 +754,7 @@ async function runDeepMode(
       prompt: reviseInstructionPrompt({
         goal: opts.goal, toolsets: opts.toolsets, language: opts.language,
         thesis, outline: outlineText,
+        unsupportedClaims: currentUnsupported,
       }),
       conversationHistory: [
         { role: "user", content: "Write a draft report." },
@@ -760,6 +778,9 @@ async function runDeepMode(
 
       seqOffset += 2;
       currentDraft = reviseResult.output;
+      // Audit was applied in the first revise; subsequent iterations
+      // respond only to the quality gate, no stale unsupported list.
+      currentUnsupported = [];
 
       const reCritiquePhase = store.addPhase({ turnId: opts.turnId, seq: seqOffset - 1, branch: 0, kind: "critique", label: `Re-critique (score: ${quality.score}/10)`, createdAt: Date.now() });
       const reCritiqueResult = await runPhaseLite({
@@ -944,6 +965,47 @@ async function evaluateResearchAdequacy(
     return supplementary;
   } catch {
     return [];
+  }
+}
+
+// ---------------------------------------------------------------------------
+// C2. Claim audit — verifiable-content check (replaces unreliable style markers)
+// ---------------------------------------------------------------------------
+async function runClaimAudit(
+  opts: PipelineOpts,
+  seq: number,
+  report: string,
+  findings: { questionId: string; title: string }[],
+): Promise<{ unsupported: UnsupportedClaim[]; usage?: TokenUsage }> {
+  const phase = store.addPhase({
+    turnId: opts.turnId,
+    seq,
+    branch: 0,
+    kind: "critique",
+    label: "Claim audit",
+    createdAt: Date.now(),
+  });
+
+  try {
+    const result = await runPhaseLite({
+      taskId: opts.taskId,
+      phaseId: phase.id,
+      kind: "critique",
+      prompt: claimAuditPrompt({
+        goal: opts.goal,
+        report,
+        findings,
+        language: opts.language,
+      }),
+    });
+    const unsupported = parseClaimAudit(result.output);
+    broadcast(opts.taskId, {
+      event: "pipeline.claim_audit",
+      data: { count: unsupported.length },
+    });
+    return { unsupported, usage: result.usage };
+  } catch {
+    return { unsupported: [], usage: undefined };
   }
 }
 
