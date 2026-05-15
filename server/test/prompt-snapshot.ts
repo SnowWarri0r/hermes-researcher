@@ -30,6 +30,8 @@ import {
   reviseInstructionPrompt,
   editorPrompt,
   claimAuditPrompt,
+  citationAuditPrompt,
+  devilsAdvocatePrompt,
   reportQualityPrompt,
   researchPrompt,
 } from "../src/prompt.ts";
@@ -224,6 +226,14 @@ const cases: { name: string; build: () => string }[] = [
             issue: "vague claim no source",
           },
         ],
+        misattributedCitations: [
+          {
+            section: "TL;DR",
+            sentence: "A7M5 在 ISO 6400 下噪点低于 Z6III。",
+            citationLabel: "DPReview test",
+            issue: "stretched — source said comparable, not 'lower than'",
+          },
+        ],
       }),
   },
   {
@@ -280,6 +290,45 @@ const cases: { name: string; build: () => string }[] = [
             output: fixtureFindings[0].output,
           },
         ],
+      }),
+  },
+  {
+    name: "13_devilsAdvocatePrompt",
+    build: () =>
+      devilsAdvocatePrompt({
+        goal: fixtureGoal,
+        thesis: fixtureThesis,
+        findings: fixtureFindings,
+        language: "Chinese (简体中文)",
+      }),
+  },
+  {
+    name: "14_citationAuditPrompt",
+    build: () =>
+      citationAuditPrompt({
+        goal: fixtureGoal,
+        report:
+          "## TL;DR\nZ6III 暗光抓拍优于 A7M5 ([DPReview](https://www.dpreview.com/test)).\n\n## 镜头\n35mm f/1.8 G 是首选 ([Reddit](https://www.reddit.com/r/sonyalpha/comments/abc123)).",
+        findings: fixtureFindings,
+        language: "Chinese (简体中文)",
+      }),
+  },
+  {
+    name: "15_thesisPrompt_revised_after_devils_advocate",
+    build: () =>
+      thesisPrompt({
+        goal: fixtureGoal,
+        planSections: fixturePlan.sections,
+        findings: fixtureFindings,
+        perspectives: fixturePlan.perspectives,
+        language: "Chinese (简体中文)",
+        previousAttempt: {
+          centralClaim: "A7M5 是同价位最佳暗光抓拍机。",
+          strongestCounter:
+            "Z6III 在 ISO 12800 下噪点更低且对焦速度相近,findings 中 Q2 直接对比给出该结论。",
+          suggestedRevision:
+            "A7M5 适合已有 E 卡口镜头的暗光用户;Z6III 才是同价位综合最佳。",
+        },
       }),
   },
 ];
@@ -382,17 +431,19 @@ interface ModeBudget {
 
 const modes: ModeBudget[] = [
   {
-    mode: "deep (audit clean)",
+    mode: "deep (audit clean, no devil's advocate)",
     bestCase:
       lookup("01_planPrompt") +
       lookup("02_thesisPrompt_with_perspectives") +
+      lookup("13_devilsAdvocatePrompt") +
       lookup("03_outlinePrompt_with_thesis") +
       5 * lookup("11_researchPrompt_no_prereq") +
       lookup("05_draftPrompt_full") +
       lookup("09_claimAuditPrompt") +
+      lookup("14_citationAuditPrompt") +
       lookup("08_editorPrompt_polish"),
     worstCase: 0, // filled below
-    detail: "1 plan + 1 thesis + 1 outline + 5 research + 1 draft + 1 audit + 1 polish",
+    detail: "1 plan + 1 thesis + 1 devil's advocate + 1 outline + 5 research + 1 draft + 1 claim audit + 1 citation audit + 1 polish",
   },
   {
     mode: "deep (audit dirty + 1 quality iter)",
@@ -400,15 +451,33 @@ const modes: ModeBudget[] = [
     worstCase:
       lookup("01_planPrompt") +
       lookup("02_thesisPrompt_with_perspectives") +
+      lookup("13_devilsAdvocatePrompt") +
       lookup("03_outlinePrompt_with_thesis") +
       5 * lookup("11_researchPrompt_no_prereq") +
       lookup("05_draftPrompt_full") +
       lookup("09_claimAuditPrompt") +
+      lookup("14_citationAuditPrompt") +
       lookup("06_critiqueInstructionPrompt") +
       lookup("07_reviseInstructionPrompt_with_audit") +
       lookup("10_reportQualityPrompt") +
       lookup("08_editorPrompt_polish"),
-    detail: "+ critique + revise + quality + polish",
+    detail: "+ critique + revise (with citation issues) + quality + polish",
+  },
+  {
+    mode: "deep (devil's advocate triggers thesis rewrite)",
+    bestCase: 0,
+    worstCase:
+      lookup("01_planPrompt") +
+      lookup("02_thesisPrompt_with_perspectives") +
+      lookup("13_devilsAdvocatePrompt") +
+      lookup("15_thesisPrompt_revised_after_devils_advocate") +
+      lookup("03_outlinePrompt_with_thesis") +
+      5 * lookup("11_researchPrompt_no_prereq") +
+      lookup("05_draftPrompt_full") +
+      lookup("09_claimAuditPrompt") +
+      lookup("14_citationAuditPrompt") +
+      lookup("08_editorPrompt_polish"),
+    detail: "thesis rewritten once; audit clean afterwards (cost: one extra thesis call)",
   },
   {
     mode: "standard (audit clean)",
@@ -421,7 +490,7 @@ const modes: ModeBudget[] = [
       lookup("09_claimAuditPrompt") +
       lookup("08_editorPrompt_polish"),
     worstCase: 0,
-    detail: "1 plan + 1 thesis + 1 outline + 4 research + 1 draft + 1 audit + 1 polish",
+    detail: "1 plan + 1 thesis + 1 outline + 4 research + 1 draft + 1 audit + 1 polish (no devil's advocate, no citation audit)",
   },
 ];
 

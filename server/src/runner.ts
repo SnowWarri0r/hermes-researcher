@@ -35,8 +35,12 @@ import {
   stripScaffoldLabels,
   claimAuditPrompt,
   parseClaimAudit,
+  citationAuditPrompt,
+  parseCitationAudit,
+  devilsAdvocatePrompt,
+  parseDevilsAdvocate,
 } from "./prompt.ts";
-import type { UnsupportedClaim } from "./prompt.ts";
+import type { UnsupportedClaim, MisattributedCitation, DevilsAdvocateVerdict } from "./prompt.ts";
 import type {
   Phase,
   PhaseKind,
@@ -665,7 +669,7 @@ async function runDeepMode(
   const { cache } = opts;
   const findings = researchResults.map((r) => ({ questionId: r.question.id, title: r.question.title, output: r.output }));
 
-  // ── A2. Thesis (skip if cached) ──
+  // ── A2. Thesis (skip if cached) + devil's advocate sycophancy gate ──
   let thesis: ParsedThesis | null;
   if (cache?.thesisOutput !== undefined) {
     replayPhase(opts.turnId, opts.taskId, {
@@ -678,6 +682,32 @@ async function runDeepMode(
     const thesisResult = await runThesis(opts, 2, plan.sections, findings, plan.perspectives);
     usages.push(thesisResult.usage);
     thesis = thesisResult.parsed;
+
+    // Devil's advocate: only worth running if we got a parsed thesis.
+    if (thesis) {
+      const adv = await runDevilsAdvocate(opts, thesis, findings);
+      usages.push(adv.usage);
+      broadcast(opts.taskId, {
+        event: "pipeline.devils_advocate",
+        data: {
+          vulnerable: adv.verdict.vulnerable,
+          score: adv.verdict.vulnerabilityScore,
+          counter: adv.verdict.strongestCounter,
+        },
+      });
+
+      if (adv.verdict.vulnerable && adv.verdict.suggestedRevision) {
+        const revised = await runThesisRevision(opts, plan.sections, findings, plan.perspectives, {
+          centralClaim: thesis.central_claim,
+          strongestCounter: adv.verdict.strongestCounter,
+          suggestedRevision: adv.verdict.suggestedRevision,
+        });
+        usages.push(revised.usage);
+        if (revised.parsed) {
+          thesis = revised.parsed;
+        }
+      }
+    }
   }
 
   const thesisAvailable = cache?.thesisOutput !== undefined;
@@ -725,19 +755,29 @@ async function runDeepMode(
     draftOutput = draftResult.output;
   }
 
-  // ── Claim audit (seq=5) — runs FIRST. If the v2 prompt produced a clean
-  // draft (no unsupported claims), skip the critique → revise loop entirely.
-  // Trust the audit: it's evidence-based, the loop is just there to fix
-  // specific issues. No issues = no work.
+  // ── Claim audit (seq=5) + citation audit (seq=5, branch=1) ─────
+  // Claim audit: did every factual sentence have SOMETHING backing it?
+  // Citation audit (FACT-lite, Tencent Mind DeepResearch 2026): for each
+  // [label](url) link, does the cited finding actually support the claim?
+  // Trigger revise loop if EITHER audit is dirty.
   const findingTitles = findings.map((f) => ({ questionId: f.questionId, title: f.title }));
   const auditResult = await runClaimAudit(opts, 5, draftOutput, findingTitles);
   usages.push(auditResult.usage);
 
+  const citationResult = await runCitationAudit(opts, draftOutput, findings);
+  usages.push(citationResult.usage);
+  broadcast(opts.taskId, {
+    event: "pipeline.citation_audit",
+    data: { count: citationResult.misattributed.length },
+  });
+
   let finalRevision = draftOutput;
   let polishSeq = 6;
 
-  // Run the rewrite loop only when audit found something to fix.
-  if (auditResult.unsupported.length > 0) {
+  const auditDirty = auditResult.unsupported.length > 0 || citationResult.misattributed.length > 0;
+
+  // Run the rewrite loop only when either audit found something to fix.
+  if (auditDirty) {
     // ── Critique (seq=6 now, only when audit dirty) ──
     let critiqueOutput: string;
     if (cache?.critiqueOutput && thesisAvailable) {
@@ -764,13 +804,18 @@ async function runDeepMode(
 
     broadcast(opts.taskId, {
       event: "pipeline.audit_decision",
-      data: { unsupported_count: auditResult.unsupported.length, took_revise_path: true },
+      data: {
+        unsupported_count: auditResult.unsupported.length,
+        misattributed_count: citationResult.misattributed.length,
+        took_revise_path: true,
+      },
     });
 
     // ── Revise + quality loop (seqOffset starts at 7) ──
     let currentDraft = draftOutput;
     let currentCritique = critiqueOutput;
     let currentUnsupported = auditResult.unsupported;
+    let currentMisattributed = citationResult.misattributed;
     let seqOffset = 7;
 
     for (let iteration = 0; iteration <= MAX_QUALITY_ITERATIONS; iteration++) {
@@ -784,6 +829,7 @@ async function runDeepMode(
           goal: opts.goal, toolsets: opts.toolsets, language: opts.language,
           thesis, outline: outlineText,
           unsupportedClaims: currentUnsupported,
+          misattributedCitations: currentMisattributed,
         }),
         conversationHistory: [
           { role: "user", content: "Write a draft report." },
@@ -813,9 +859,10 @@ async function runDeepMode(
 
         seqOffset += 2;
         currentDraft = reviseResult.output;
-        // Audit was applied in the first revise; subsequent iterations
-        // respond only to the quality gate, no stale unsupported list.
+        // Audits were applied in the first revise; subsequent iterations
+        // respond only to the quality gate, no stale audit lists.
         currentUnsupported = [];
+        currentMisattributed = [];
 
         const reCritiquePhase = store.addPhase({ turnId: opts.turnId, seq: seqOffset - 1, branch: 0, kind: "critique", label: `Re-critique (score: ${quality.score}/10)`, createdAt: Date.now() });
         const reCritiqueResult = await runPhaseLite({
@@ -833,10 +880,10 @@ async function runDeepMode(
     }
     polishSeq = seqOffset + 1;
   } else {
-    // Audit clean — skipped critique + revise loop entirely.
+    // Both audits clean — skipped critique + revise loop entirely.
     broadcast(opts.taskId, {
       event: "pipeline.audit_decision",
-      data: { unsupported_count: 0, took_revise_path: false },
+      data: { unsupported_count: 0, misattributed_count: 0, took_revise_path: false },
     });
   }
 
@@ -966,6 +1013,92 @@ async function runThesis(
 }
 
 // ---------------------------------------------------------------------------
+// A3. Devil's advocate phase — sycophancy guard. Runs after thesis (seq=2,
+// branch=1). If vulnerable, regenerate thesis once at seq=2, branch=2.
+// Reference: Sharma et al. 2023 sycophancy paper; counter-prompting reduces
+// agreement bias significantly.
+// ---------------------------------------------------------------------------
+async function runDevilsAdvocate(
+  opts: PipelineOpts,
+  thesis: ParsedThesis,
+  findings: { questionId: string; title: string; output: string }[],
+): Promise<{ verdict: DevilsAdvocateVerdict; usage?: TokenUsage }> {
+  const phase = store.addPhase({
+    turnId: opts.turnId,
+    seq: 2,
+    branch: 1,
+    kind: "critique",
+    label: "Devil's advocate",
+    createdAt: Date.now(),
+  });
+
+  try {
+    const result = await runPhaseLite({
+      taskId: opts.taskId,
+      phaseId: phase.id,
+      kind: "critique",
+      prompt: devilsAdvocatePrompt({
+        goal: opts.goal,
+        thesis,
+        findings,
+        language: opts.language,
+      }),
+    });
+    const verdict = parseDevilsAdvocate(result.output);
+    return { verdict, usage: result.usage };
+  } catch {
+    // Don't block pipeline on failure — treat as not vulnerable.
+    return {
+      verdict: {
+        vulnerable: false,
+        vulnerabilityScore: 3,
+        strongestCounter: "",
+        counterEvidence: [],
+        suggestedRevision: "",
+      },
+      usage: undefined,
+    };
+  }
+}
+
+async function runThesisRevision(
+  opts: PipelineOpts,
+  planSections: string[],
+  findings: { questionId: string; title: string; output: string }[],
+  perspectives: { id: string; name: string; wants: string }[] | undefined,
+  previousAttempt: { centralClaim: string; strongestCounter: string; suggestedRevision: string },
+): Promise<ThesisRunResult> {
+  const phase = store.addPhase({
+    turnId: opts.turnId,
+    seq: 2,
+    branch: 2,
+    kind: "critique",
+    label: "Thesis (revised)",
+    createdAt: Date.now(),
+  });
+
+  try {
+    const result = await runPhaseLite({
+      taskId: opts.taskId,
+      phaseId: phase.id,
+      kind: "critique",
+      prompt: thesisPrompt({
+        goal: opts.goal,
+        planSections,
+        findings,
+        perspectives,
+        language: opts.language,
+        previousAttempt,
+      }),
+    });
+    const parsed = parseThesis(result.output);
+    return { output: result.output, usage: result.usage, parsed };
+  } catch {
+    return { output: "", usage: undefined, parsed: null };
+  }
+}
+
+// ---------------------------------------------------------------------------
 // B. Research adequacy gate
 // ---------------------------------------------------------------------------
 const MAX_SUPPLEMENTARY_RESEARCH = 3;
@@ -1049,6 +1182,46 @@ async function runClaimAudit(
     return { unsupported, usage: result.usage };
   } catch {
     return { unsupported: [], usage: undefined };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// C3. Citation audit — FACT-lite verification. For each [label](url) link
+// in the draft, verify the cited finding actually supports the claim.
+// Runs as a separate visible phase (seq=5, branch=1, kind="critique"),
+// alongside the claim audit. Deep mode only — cost of passing full findings
+// text is non-trivial (~10-20k tokens).
+// ---------------------------------------------------------------------------
+async function runCitationAudit(
+  opts: PipelineOpts,
+  report: string,
+  findings: { questionId: string; title: string; output: string }[],
+): Promise<{ misattributed: MisattributedCitation[]; usage?: TokenUsage }> {
+  const phase = store.addPhase({
+    turnId: opts.turnId,
+    seq: 5,
+    branch: 1,
+    kind: "critique",
+    label: "Citation audit",
+    createdAt: Date.now(),
+  });
+
+  try {
+    const result = await runPhaseLite({
+      taskId: opts.taskId,
+      phaseId: phase.id,
+      kind: "critique",
+      prompt: citationAuditPrompt({
+        goal: opts.goal,
+        report,
+        findings,
+        language: opts.language,
+      }),
+    });
+    const misattributed = parseCitationAudit(result.output);
+    return { misattributed, usage: result.usage };
+  } catch {
+    return { misattributed: [], usage: undefined };
   }
 }
 
