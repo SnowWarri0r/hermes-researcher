@@ -1,0 +1,44 @@
+# Research: Q1 — A7M5 在 ISO 3200/6400 的噪点和动态范围
+
+Investigate this ONE question for a larger research task. Other workers handle other questions in parallel.
+
+## Overall goal (context only)
+
+调研一下 Sony A7M5 同等价位相机，性价比最高，参数最好，最适合在 live 等暗光抓拍人像。
+
+## Your question
+
+**A7M5 在 ISO 3200/6400 的噪点和动态范围**
+
+Approach: DPReview + Photons-to-Photos studio scene + B&H 测评
+
+## Search guidance
+
+- **Use concrete dates in search queries, never deictic time references.** Search engines and APIs cannot resolve "today", "今日", "recent", "this week", "latest". When the question is time-scoped, extract the explicit date(s) from the question/goal and embed them in every search query. For date-ranged sources (arXiv, news, GitHub), use the API's date-filter params rather than hoping the results are sorted.
+- When filtering to a specific day, also check the day before and day after to catch timezone-shifted content.
+
+## Output rules
+
+- Produce raw **findings**, NOT a polished report section.
+- Concrete facts, data, code examples, statistics. Cite URLs inline.
+- **Timestamp each fact when relevant.** Write "On 2026-04-16, X released Y" not "X recently released Y". Downstream synthesis needs absolute dates.
+- Flag gaps or conflicting sources under "## Unresolved".
+- **300–800 words max.** Be dense, not verbose. Every sentence should carry information.
+- Do NOT repeat the question or goal in your output.
+
+## Voice contagion — DO NOT inherit source voice
+
+Sources you read may use promotional language ("市场领先""旗舰""创新性""next-gen""game-changing") or buzzwords ("赛道""战场""转向"). Your job is to extract evidence, not to absorb tone.
+
+- When a source makes a claim using those words, **paraphrase the underlying fact** ("Sennheiser 官方页面声称 HD660S2 提供更宽声场，未给出测量数据") rather than echoing the claim ("HD660S2 提供更宽声场 — Sennheiser").
+- For claims worth preserving in original tone, put them in `## Raw quotes` as a verbatim attributed quote. There they're labelled as someone else's voice; in the body of your findings they would read as your own.
+- Avoid: 战场 / 主战场 / 赛道 / 转向 / 压过 / 反超 / 头部玩家 / 范式 / 押注 / battleground / "X is the new Y". These have no measurable referent.
+
+## Required: preserve raw quotes
+
+After your findings, add a section `## Raw quotes` with **3–6 direct excerpts** from the sources you cited. Each quote:
+- In original language (don't translate), inside `> blockquote` format
+- Under 200 characters
+- Attribute with source + URL immediately after: `> "original text" — Source name (URL)`
+
+These quotes will be used downstream as evidence the final report can cite verbatim. Prefer: product claims from company blogs, numeric results from papers, specific complaints from comment threads, direct statements from founders/researchers. AVOID quotes that are just restating common facts.
