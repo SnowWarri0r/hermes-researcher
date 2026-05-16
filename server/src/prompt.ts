@@ -1064,8 +1064,19 @@ ${styleGuide(opts.language)}`;
 }
 
 // ---------------------------------------------------------------------------
-// 6. EDITOR pass — polish language only, no structural change.
-// Fights AI voice that survived revise. Uses lite phase.
+// 6. POLISH pass — STORM-style "Article Polishing Module" (NAACL 2024).
+//
+// Per STORM's design: this stage's job is DEDUPLICATION + SUMMARY ALIGNMENT +
+// STRUCTURAL CLEANUP. It does NOT fight AI voice — voice is the writer's
+// responsibility (handled by v2 prompt + reference exemplars + claim audit).
+// Visible scaffold labels are stripped deterministically by stripScaffoldLabels
+// after this phase, so even minimal style residue survives one more guard.
+//
+// Why split jobs: when "fix style + dedup + align summary" all live in one
+// prompt, the model picks the easiest job (rewriting prose for style) and
+// neglects the harder structural ones (cross-section dedup needs holding the
+// whole report in attention). Narrowing the brief forces it to do the
+// structural work.
 // ---------------------------------------------------------------------------
 export function editorPrompt(opts: {
   goal: string;
@@ -1074,33 +1085,40 @@ export function editorPrompt(opts: {
 }): string {
   const preserveBlock = opts.thesisPresent
     ? `
-
-## Do NOT disturb (narrative arc must survive the edit)
-- Do NOT change section heading text.
-- Do NOT remove or rephrase the TL;DR opening sentence.
-- Section first/last sentences carry the cross-section flow (a shared noun ties to the previous/next section). Keep that noun in place. If the writer left visible scaffold labels — \`**IN —**\` / \`**OUT —**\` / \`**Connection IN:**\` / \`**Section claim:**\` / \`**Sub-claim：**\` / \`**小结论：**\` / \`tie_to_previous\` / \`tee_up_next\` — STRIP the label and rewrite the line as natural prose that still contains the linking noun.
-- Strike standalone "Signal vs noise" subheadings or tables — fold them back into prose.
-- Do NOT remove the final "so what" statement.
-Your job is language, not structure.`
+- Preserve the TL;DR opening sentence.
+- Preserve section headings verbatim.
+- Preserve the final "so what" statement.`
     : "";
 
-  return `# Copy edit
+  return `<role>
+You are the polish editor for a finished research report. Your job is structural cleanup, NOT voice or style. Three priorities, in order:
 
-You are the copy editor for a top-tier technology publication. The writer submitted a revised draft. Your job: **tighten the language, kill AI voice, preserve all substance**.
+1. **Deduplicate facts and citations.** When the same number, quote, or [text](url) link appears in 2+ sections, keep it in the section where it carries the most analytical weight; in the other sections replace with a brief reference ("如前节所述..." / "as cited above") or cut the redundant evidence entirely. The reader should not feel a déjà vu reading later sections.
 
-## Goal the report addresses
+2. **Align the TL;DR with the final report.** Reread the body, then check the TL;DR's claims actually match what the body delivers. If the body landed on a different conclusion than the TL;DR promised, rewrite the TL;DR to match the body — not the other way around. The TL;DR is a summary of what was actually written, not a promise the writer hoped to keep.
+
+3. **Smooth structural defects.** Fix: orphan sub-sections (a heading with one sentence under it), inconsistent heading depth (\`##\` then \`####\` jumping one level), trailing fragments after the "so what" closer, citation links rendered as bare text, malformed tables.
+</role>
+
+<not_your_job>
+- Voice / tone / "AI smell" — the writer handled this. Don't second-guess word choice.
+- Banned-phrase scanning — a deterministic sanitizer runs after you. Don't waste a pass on it.
+- Restructuring sections or rewriting whole paragraphs — out of scope. Surgical edits only.
+- Adding or removing analytical claims — preserve every claim verbatim.
+</not_your_job>
+
+<goal>
 ${opts.goal}
+</goal>
 
-## What to change
-- Strike banned AI-voice phrases.
-- Reduce bolding — at most 1–2 bolded terms per paragraph.
-- Compress. Kill meta-commentary, "it is worth noting", stacked adjectives, filler.
-- Fix any remaining "this means that" / "this suggests" tails.
-- Preserve every fact, number, citation, and link.${preserveBlock}
+<preserve>${preserveBlock}
+- Every number, version ID, date, named entity in the body.
+- Every \`[text](url)\` citation (you may MOVE one if dedup demands, never DELETE).
+</preserve>
 
-## Output
-Return the edited report in full, ready to publish. No change log, no preamble.
-${opts.language ? `\nFinal copy is in ${opts.language}.` : ""}`;
+<output_format>
+Output the polished report in full, ready to publish. No change log, no preamble, no explanation of edits.${opts.language ? `\n\nFinal copy is in ${opts.language}.` : ""}
+</output_format>`;
 }
 
 // Slim revise — used with conversation_history that contains draft + critique
