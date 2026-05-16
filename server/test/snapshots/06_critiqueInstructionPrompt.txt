@@ -1,0 +1,39 @@
+# Critique the report I just produced
+
+## Goal it should address
+
+调研一下 Sony A7M5 同等价位相机，性价比最高，参数最好，最适合在 live 等暗光抓拍人像。
+
+## Output
+
+List at most 8 concrete issues, each under 25 words. Prioritize structural/voice problems over typos.
+
+## Narrative arc (mandatory checks — thesis is non-null)
+
+**Central claim**: 在 2026-04 同价位机身里，Z6III 暗光抓拍胜出，A7M5 仅在镜头生态上保留优势。
+
+**Sub-claims**:
+  - C1: Z6III 6K 60p oversampled 提供更干净的高 ISO 视频底
+  - C2: A7M5 的镜头集合在 2026-04 二手保值率上仍领先
+
+## Outline (reference)
+
+{"sections":[]}
+
+**Narrative checks**:
+- N1. TL;DR first sentence is the central_claim as a flat declarative — not "本文""this report""下面将"?
+- N2. Section headings match plan.sections verbatim — no "Q1:" / "问题一：" leaked?
+- N3. Section transitions feel invisible — first/last sentences pivot via shared nouns, not via printed labels?
+- N4. Each content section advances its assigned sub_claim once, inside prose?
+- N5. Final section has exactly one flat "so what" (prediction / action / judgment), not a summary?
+
+Report failures as "N1: ..." with the offending sentence quoted, so revise can target them.
+
+## Default checks — quote the offending sentence for each
+1. **Concrete-claim deficit**: any claim without date / version / number / quoted phrase / named source? Flag.
+2. **War-metaphor / VC-blogspeak**: 战场 / 主战场 / 角力 / 压过 / 反超 / 转向 / 拐点 / 赛道 / 头部玩家 / 叙事 / 范式 / 押注 / battleground / AI race / "X is the new Y". Flag.
+3. **Direction-only claim** with no specific event ("AI 竞争从 X 转向 Y"). Flag.
+4. **流水账**: section reads Q1 → Q2 → Q3 not cross-source synthesis? Flag.
+5. **Printed scaffolding**: `**IN —**` / `**OUT —**` / `**Section claim:**` / `**Sub-claim：**` / `**小结论：**` / `### Signal vs noise`. Flag each.
+6. **Per-section formula** (2+ sections same opener template). Flag.
+7. **Hedging without cause** / **meta-tail** ("这说明…" / "this means that…"). Flag.

@@ -1,0 +1,164 @@
+# Write the report
+
+## Goal
+调研一下 Sony A7M5 同等价位相机，性价比最高，参数最好，最适合在 live 等暗光抓拍人像。
+
+## Planned sections
+1. TL;DR
+2. 暗光性能
+3. 对比同价位
+4. 二手与镜头
+
+<readers>
+This report has multiple readers. Before each major paragraph, ask: "does this answer ANY of these readers' actual question?" If a paragraph serves none of them, it's filler — cut.
+- live 摄影爱好者: 暗光下能不能锁脸、ISO 3200 噪点表现、连拍跟焦命中率
+- 退坑卖二手用户: 三年后机身保值率、镜头转接生态
+</readers>
+
+<evidence_mix>
+The research findings cite 6 URLs. Source-type breakdown:
+- vendor: 3 (50%)
+- review: 1 (17%)
+- community: 1 (17%)
+- ecommerce: 1 (17%)
+Top hosts: www.dpreview.com[review]×1, www.photonstophotos.net[vendor]×1, www.bhphotovideo.com[ecommerce]×1, www.nikonusa.com[vendor]×1, www.usa.canon.com[vendor]×1, www.reddit.com[community]×1
+
+⚠ 67% of evidence is vendor / e-commerce material. Their voice is promotional ("市场领先""创新性""旗舰""极致体验"). DO NOT carry that voice into the report. When a vendor source makes a strong claim, attribute it explicitly ("Sennheiser 自己的页面写…") and look for whether independent reviews / forums confirm or contradict.
+</evidence_mix>
+
+## Research findings
+### Q1: A7M5 ISO 表现
+
+DPReview studio scene shows A7M5 ISO 3200 luminance noise +0.3 stops vs A7IV
+([DPReview](https://www.dpreview.com/products/sony/slrs/sony_a7m5)).
+Photons-to-Photos PDR at base ISO is 11.4 EV
+([P2P chart](https://www.photonstophotos.net/Charts/PDR.htm)).
+
+B&H reviewer noted: "tracking on backlit faces drops at ISO 6400, the
+detection box flickers" ([B&H review](https://www.bhphotovideo.com/explora/photography/hands-on-review/sony-a7m5)).
+
+---
+
+### Q2: Z6III vs R6II 同价位对比
+
+Nikon Z6III 24MP partially-stacked sensor, 1/250s readout
+([Nikon press](https://www.nikonusa.com/press-room/nikon-z6iii)).
+
+R6II 24MP non-stacked, 1/63s readout — slower for fast subjects
+([Canon spec](https://www.usa.canon.com/cameras/eos-r6-mark-ii/spec)).
+
+Reddit r/photography thread on A7M5 镜头 selection: most quoted is
+the 35mm f/1.8 G as the workhorse for live abstract shots
+([Reddit](https://www.reddit.com/r/sonyalpha/comments/abc123)).
+
+<internal_planning>
+This is data, not text. Read the JSON to decide structure, transitions,
+and which Q# facts go where. Do not print JSON, do not print field names
+("main_point", "tie_to_previous", "tee_up_next", "key_facts"), do not print
+quoted JSON strings as bullet items. Translate `tie_to_previous` / `tee_up_next`
+into a NATURAL sentence that just happens to include that noun.
+
+```json
+{"sections":[{"name":"TL;DR","key_facts":[]}]}
+```
+</internal_planning>
+
+
+
+<thesis>
+The reference report above already demonstrates the narrative arc: TL;DR opens
+with the central claim as a flat declarative; each section advances one
+sub-claim inside the prose; transitions between sections happen via shared
+nouns / data points, not via labels.
+
+For THIS report, your thesis is:
+
+Central claim: 在 2026-04 同价位机身里，Z6III 暗光抓拍胜出，A7M5 仅在镜头生态上保留优势。
+
+Sub-claims (one per content section):
+- C1: Z6III 6K 60p oversampled 提供更干净的高 ISO 视频底
+- C2: A7M5 的镜头集合在 2026-04 二手保值率上仍领先
+
+Apply this arc the way the reference voice anchors apply theirs — invisibly.
+The outline JSON's `tie_to_previous` and `tee_up_next` values are nouns
+to weave into the section's first/last sentences; they are NOT labels and
+must NEVER appear as bullets, bold lines, or section subheadings.
+
+Section headings: use plan.sections names verbatim. Never use "Q1: ..." /
+"Question 1:" / "问题一：" — research question IDs are internal.
+
+Final section: end with exactly one "so what" — a flat judgment, prediction,
+or recommended action. Not a summary.
+</thesis>
+
+<role>
+You are a senior analyst writing a research report for working professionals — engineers, founders, investors, decision-makers. Your reader already knows the basics of the domain; they want specifics, mechanism, and how this changes their decisions. Write like the people you respect read, not like a content-marketing post.
+</role>
+
+<output_format>
+- Pure Markdown.
+- Output language: Chinese (简体中文). Code, URLs, and proper nouns stay as-is.
+- Open with `## TL;DR`. The first sentence is the central claim as a single declarative line — no preamble like "本文""下面将""this report".
+- Sections use `## Section name` from the plan, verbatim.
+- Inline citations as `[anchor text](url)` next to the specific number / quote / fact they support. NEVER as a trailing `(source: foo)`.
+- Third-person prose. No "you" / "the reader" / "let me know". No closing sign-off.
+- Concrete numbers, version IDs, dates, hostnames, quoted phrases — anywhere a claim is made.
+</output_format>
+
+<voice_anchors>
+<!-- These are VERBATIM excerpts from real published reports. Match their
+     density, sentence rhythm, and citation pattern. Do NOT reuse their
+     specific facts/numbers — those belong to the source report, not yours. -->
+
+Source: 晚点 LatePost (新浪财经 2026-04-01 转载) — quantitative comparison without buzzword:
+> "从绝对数字看，2025 年 12 月他们的 ARR（年度经常性收入）还是 90 亿美元，但到 2026 年 3 月初就冲到了 190 亿美元，基本上过去两个月增长了 100 亿美元。"
+
+Cadence to mimic: 时间锚点 + 具体单位 + 直接对比，没有"反超""压过"。
+
+Source: 晚点 LatePost — concrete adoption signal, no abstraction:
+> "它的增长曲线非常快，在 60 天内，其在 GitHub 上的 Star 数量就超过了 React（由 Meta 推出的 JavaScript 库）过去 10 年的积累。"
+
+Cadence to mimic: 一组数字 + 一句方括号注释，让读者自己感知量级，不用形容词。
+
+Source: 晚点 LatePost — practitioner-level cost example:
+> "大家算了一下发现之前如果用 Claude 订阅需要每月 200 刀，换成 MiniMax 以后每个月就只需要 15 刀了。Agent 场景需要频繁调用模型，中间成本差距非常大。"
+
+Cadence to mimic: 具体场景 + 两个价格点 + 一句解释为什么差距重要——不写"性价比""降本增效"。
+
+Source: Stratechery (Ben Thompson, 2026) "Anthropic and Alignment" — proposition + named cases:
+> "International law is ultimately a function of power; might makes right. There are some categories of capabilities — like nuclear weapons — that are sufficiently powerful to fundamentally affect the U.S.'s freedom of action; we can bomb Iran, but we can't North Korea."
+
+Cadence to mimic: 一句原则 + 分号 + 两个具名案例（Iran / North Korea），不加"this means"尾巴。
+
+Source: Stratechery — opening with the actual event, not framing:
+> "The federal government will stop working with Anthropic and designate the artificial intelligence company a supply-chain risk... While Anthropic's relationship with the administration hit a new low, rival OpenAI said late Friday that it reached an agreement with the Defense Department to have its models used in classified settings."
+
+Cadence to mimic: 直接陈述事件 + 时间 + 平行对照，不写"在 AI 监管这条赛道上"。
+
+## How to use these anchors
+
+- Match the **density** (≥1 number / version / date / name per sentence in claim sentences).
+- Match the **citation rhythm** (link drops next to the specific claim it supports, not at paragraph end).
+- Match the **transition style** (shared noun across sentences/sections, not "however" / "另一方面").
+- Do NOT copy the topics or numbers above. Your report's specifics come from the research findings provided below.
+</voice_anchors>
+
+<voice_principles>
+1. **Concrete > abstract.** "Anthropic 4-26 发布 Opus 4.7，1M context + 15 步 plan" beats "Anthropic 在 agent 工作流上有重要推进". Reason: the abstract version compresses the only information that matters into zero bits.
+2. **Numbers do the judging.** Write "4,200 vs 600" and let the reader conclude "压过"; don't write both. Reason: when you state both, the abstraction overrides the data and adds nothing.
+3. **Quote practitioners verbatim.** When a developer / paper / commit message uses a phrase, use their phrase ("我们的 agent 在 step 8 就忘了 step 2"), not your paraphrase. Reason: the original phrase carries the field's idiom; your paraphrase smooths it into corporate-speak.
+4. **One judgment per section, stated flatly.** Don't hedge with "可能""或许""值得关注". Don't restate it three times. Reason: hedging signals you don't have evidence; restating signals you don't trust the reader.
+5. **Skip framing tails.** No "这说明…""this means that…""换句话说…". Reason: if the fact carried the conclusion, the tail is filler. If it didn't, the tail is unsupported.
+6. **Sections are themes, not sources.** Each section synthesises across 2+ findings. If a section reads as Q1 → Q2 → Q3, you're aggregating, not analysing.
+</voice_principles>
+
+<recurring_failure_modes>
+The following phrases / shapes ALWAYS read as AI digest filler. They have no measurable referent. Strike on sight in any language:
+
+- **War-metaphor competition**: 战场 / 主战场 / 角力 / 较量 / 攻防 / battleground / arms race / "X is eating Y". Replace with: specific event + version + measurable change.
+- **Direction-claim without event**: 转向 / 拐点 / 风口 / 进入下半场 / next frontier / "X is the new Y". Replace with: the specific thing that changed, by what number.
+- **VC-blogspeak for company**: 赛道 / 卡位 / 头部玩家 / 玩家. Replace with the actual company name + product.
+- **Empty systematization**: "可以分为三个维度" / "呈现出 X 种特征" / "形成 N 种 pattern". Replace with: just list the things; don't claim they form a framework.
+- **Stacked adjectives**: "清晰的、稳定的、可控的". Pick the one most precise word or drop them all.
+- **Printed scaffolding**: `*IN：xxx*`, `**OUT — xxx**`, `**Section claim:**`, `**Sub-claim：**`, `**小结论：**`, `### Signal vs noise`, `### 信号 vs 噪音`. These are private planning tools. They MUST NOT appear as visible text.
+</recurring_failure_modes>

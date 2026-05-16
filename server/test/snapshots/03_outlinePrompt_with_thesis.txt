@@ -1,0 +1,75 @@
+# Report outline (thesis-driven, JSON output)
+
+Translate the approved thesis into a structured planning sheet. The writer reads this as JSON — so NEVER use prose paragraphs or markdown bold labels in your output. JSON keys only.
+
+## Goal
+调研一下 Sony A7M5 同等价位相机，性价比最高，参数最好，最适合在 live 等暗光抓拍人像。
+
+## Central claim (writer paraphrases this in TL;DR opening)
+在 2026-04 同价位机身里，Z6III 暗光抓拍胜出，A7M5 仅在镜头生态上保留优势。
+
+## Sub-claims
+  C1: Z6III 6K 60p oversampled 提供更干净的高 ISO 视频底  (supported by Q1)
+  C2: A7M5 的镜头集合在 2026-04 二手保值率上仍领先  (supported by Q2)
+
+## Section plan (order and names FIXED)
+  1. TL;DR  →  sub_claim: (connective)  role: central claim opener
+  2. 暗光性能  →  sub_claim: C1  role: evidence + narrative
+  3. 对比同价位  →  sub_claim: C2  role: comparative table + judgment
+  4. 二手与镜头  →  sub_claim: (connective)  role: so-what + recommendation
+
+## Research findings (reference by Q#)
+### Q1: A7M5 ISO 表现
+
+DPReview studio scene shows A7M5 ISO 3200 luminance noise +0.3 stops vs A7IV
+([DPReview](https://www.dpreview.com/products/sony/slrs/sony_a7m5)).
+Photons-to-Photos PDR at base ISO is 11.4 EV
+([P2P chart](https://www.photonstophotos.net/Charts/PDR.htm)).
+
+B&H reviewer noted: "tracking on backlit faces drops at ISO 6400, the
+detection box flickers" ([B&H review](https://www.bhphotovideo.com/explora/photography/hands-on-review/sony-a7m5)).
+
+---
+
+### Q2: Z6III vs R6II 同价位对比
+
+Nikon Z6III 24MP partially-stacked sensor, 1/250s readout
+([Nikon press](https://www.nikonusa.com/press-room/nikon-z6iii)).
+
+R6II 24MP non-stacked, 1/63s readout — slower for fast subjects
+([Canon spec](https://www.usa.canon.com/cameras/eos-r6-mark-ii/spec)).
+
+Reddit r/photography thread on A7M5 镜头 selection: most quoted is
+the 35mm f/1.8 G as the workhorse for live abstract shots
+([Reddit](https://www.reddit.com/r/sonyalpha/comments/abc123)).
+
+## Output format
+
+Output ONE JSON object inside a fenced ```json block. Schema:
+
+```json
+{
+  "sections": [
+    {
+      "name": "<section name verbatim from section_plan>",
+      "sub_claim_id": "C1" | "connective",
+      "main_point": "<for content sections: a paraphrase of the sub_claim — what this section drives at; one sentence>",
+      "tie_to_previous": "<concrete noun / data point this section's first sentence shares with the previous section's last sentence — null for the opening section>",
+      "tee_up_next": "<concrete noun / data point this section's last sentence shares with the next section's first sentence — null for the final section>",
+      "key_facts": [
+        { "qid": "Q1", "fact": "specific number or ≤15-word quoted phrase from findings" }
+      ],
+      "target_words": 200
+    }
+  ]
+}
+```
+
+## Hard rules
+- JSON only — NO markdown sections, NO bold labels, NO prose paragraphs in your output. The writer will read this as data, not text.
+- `name` matches section_plan verbatim.
+- `tie_to_previous` / `tee_up_next` are CONCRETE NOUNS (a number, a product version, a person, a specific concept that just appeared in the previous/next section). Forbidden values: "承接上文", "as mentioned above", "furthermore", "in conclusion", "building on", "另一方面", "上文提到".
+- `key_facts` ≥ 3 per content section, each with a number / version / quoted phrase ≤15 words (NOT "discussion of X" / "background on Y").
+- Final section: `tee_up_next` is null; in its place the writer will produce a "so what" judgment.
+- TL;DR section: `tie_to_previous` is null.
+- The string VALUES in the JSON should be in Chinese (简体中文) (matching the report language). Keys stay English.

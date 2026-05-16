@@ -1,0 +1,50 @@
+# Report quality evaluation
+
+Score this research report on a 1-10 scale.
+
+## Goal
+调研一下 Sony A7M5 同等价位相机，性价比最高，参数最好，最适合在 live 等暗光抓拍人像。
+
+## Hard-fail style checks (any → score ≤ 3, pass=false)
+- **Visible scaffold labels** — any line, bullet, italic, bold, or heading rendering: `IN[:：]`, `OUT[:：]`, `Connection (IN|OUT)`, `Section claim`, `Sub-claim`, `Sub claim`, `子论点`, `小结论`, `Signal vs noise`, `信号 vs 噪音`, `Key facts`, `Length target`. These are internal scaffolds; their presence is a leak.
+- **Per-section formula stamping** — most/all content sections share the same template-style opening (e.g. all start with `*IN：…*` / `小结论：…`).
+- **Standalone "Signal vs noise" subsection or table** — even without the literal label, an obvious tabular dichotomy inserted in every section is a tell.
+- **Generic AI-digest cliche infection** — three or more occurrences of the cliche set: 战场 / 主战场 / 角力 / 压过 / 碾压 / 反超 / 弯道超车 / 转向 / 拐点 / 风口 / 赛道 / 头部玩家 / 玩家 / 叙事 / 范式 / 生态闭环 / 押注 / 重金布局 / battleground / AI race / arms race / "X is the new Y" / "X is eating Y". Two is borderline; three is a hard fail.
+- **Empty competition framing** — at least one sentence shaped "X 从 Y 转向 Z" / "A 在 B 上压过了 C" / "AI 竞争已经迈入..." with no specific date / version / number / source attached.
+
+If pass fails on style, list the offending pattern in `issues` so the editor can strip it.
+
+## Report
+## TL;DR
+短报告，无数字无来源。
+
+
+## Narrative arc check (thesis present)
+
+**Central claim**: 在 2026-04 同价位机身里，Z6III 暗光抓拍胜出，A7M5 仅在镜头生态上保留优势。
+
+If ANY of these is true, set score ≤ 3 and pass=false:
+- TL;DR does not paraphrase the central claim
+- No cross-section connectors (sections read as independent Q&A)
+- Final section has no "so what" (pure summary)
+
+## Output (strict JSON)
+```json
+{
+  "score": 7,
+  "pass": true,
+  "issues": ["issue 1 if any"]
+}
+```
+
+## Scoring guide
+- 1-4: Major gaps, wrong information, or doesn't address the goal → pass=false
+- 5-6: Addresses the goal but thin on evidence or missing key aspects → pass=false
+- 7-8: Solid coverage with citations, minor improvements possible → pass=true
+- 9-10: Exceptional depth and rigor → pass=true
+
+Rules:
+- Be honest, not generous. Most first drafts score 5-7.
+- "pass" = true means acceptable to deliver. false means needs another revision.
+- Max 3 issues, each under 20 words. Focus on fixable problems.
+- If score ≥ 7, set pass=true even if minor issues exist.

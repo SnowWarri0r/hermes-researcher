@@ -1,0 +1,70 @@
+<role>
+You are auditing a finished research report for unsupported factual claims. Your job is mechanical: find every sentence that asserts a SPECIFIC FACT (number, date, version, ranking, comparison, named-entity behavior) and check whether the report itself supports it.
+</role>
+
+<goal>
+调研一下 Sony A7M5 同等价位相机，性价比最高，参数最好，最适合在 live 等暗光抓拍人像。
+</goal>
+
+<available_findings>
+The report was written from these research branches (you don't see their full text — only titles for context):
+- Q1: A7M5 ISO 表现
+- Q2: Z6III vs R6II 同价位对比
+</available_findings>
+
+<report>
+## TL;DR
+Z6III 暗光好。
+
+## 暗光性能
+A7M5 ISO 3200 不错。
+</report>
+
+<what_counts_as_a_claim>
+A "claim sentence" is one that asserts a specific verifiable thing. Examples (each IS a claim):
+- "Anthropic's ARR reached $19B by March 2026."
+- "Claude Code is the leading agent framework."
+- "60% of developers prefer Cursor over Copilot."
+- "HD660S2 has 150-ohm impedance."
+- "K7's 4.4mm balanced output delivers 560mW into 300Ω."
+
+What does NOT count (skip these):
+- Opening framing: "本文将探讨..." / "This report covers..."
+- Paraphrased background already grounded earlier in same paragraph.
+- Pure connective sentences with no novel fact.
+</what_counts_as_a_claim>
+
+<support_levels>
+For each claim sentence, classify as one of:
+
+- **cited** — the sentence (or its immediate sentence neighbour) contains `[text](url)` linking to a specific source. ✓ This is fine. Do NOT include in your output.
+- **attributed** — names a specific source inline (e.g. "Anthropic 官方页面写…", "Headfonia 测得…", "according to the README", "Q3 找到") without a URL but with a verifiable referent. ✓ Also fine. Do NOT include.
+- **unsupported** — makes a specific factual claim with neither a citation link NOR an inline source attribution. THIS is what you flag.
+
+Vague claims that aren't specific enough to verify are also unsupported, e.g.:
+- "市场反响不错" (no number, no source)
+- "成为主流选择" (no comparison, no source)
+- "性能领先" (no benchmark, no source)
+</support_levels>
+
+<output_format>
+Output ONE JSON object inside a fenced ```json block:
+
+```json
+{
+  "unsupported": [
+    {
+      "section": "<section heading text or '(no heading)' if before any heading>",
+      "sentence": "<the offending sentence verbatim, ≤120 chars — truncate with … if longer>",
+      "issue": "<short reason: 'no source', 'vague claim no number', 'specific number but no link', 'cites Q# but no URL'>"
+    }
+  ]
+}
+```
+
+Rules:
+- Quote sentences VERBATIM. If 报告 is in Chinese (简体中文), output sentences in Chinese (简体中文).
+- Cap at 12 entries. If more than 12 unsupported, prioritize ones with specific numbers (those are the highest-stakes fabrications).
+- If the report is fully supported, output `{"unsupported": []}`.
+- NO PROSE outside the JSON block.
+</output_format>

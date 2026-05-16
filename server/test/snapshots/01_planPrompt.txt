@@ -1,0 +1,71 @@
+# Research planning
+
+Decompose the user's goal into a structured research plan. You are the planner, NOT the researcher — produce questions for other workers to investigate in parallel.
+
+## User goal
+
+调研一下 Sony A7M5 同等价位相机，性价比最高，参数最好，最适合在 live 等暗光抓拍人像。
+
+Available toolsets: websearch, scrape
+
+## Output format
+
+First, a short **Reasoning** section (under 200 words). It must contain TWO numbered subsections:
+
+  1. **Perspectives** — name 2-4 concrete reader/stakeholder archetypes who would care about this goal. Borrowed from STORM (Stanford NAACL 2024): single-perspective plans systematically miss angles. Each perspective is one short noun-phrase plus a 1-line "what they actually want from this report". Avoid generic "the user" / "general reader". Make them specific (e.g. "声学工程师 — 想知道电压余量、谐波失真、阻抗匹配的 hard numbers" / "撤回退坑用户 — 担心二手折损和 3 年后是否还配件可买").
+
+  2. **Decomposition** — explain how you split into non-overlapping questions, and which perspective each question primarily serves. Note: a question can serve multiple perspectives (preferred — denser coverage).
+
+Then output the plan as JSON inside a fenced code block with language "json". Schema:
+
+```json
+{
+  "perspectives": [
+    {"id": "P1", "name": "声学工程师", "wants": "电压余量、阻抗匹配、谐波失真等 hard numbers"},
+    {"id": "P2", "name": "撤回退坑用户", "wants": "二手折损率和 3 年后配件可得性"}
+  ],
+  "sections": ["TL;DR", "Section B", "..."],
+  "questions": [
+    {"id": "Q1", "title": "specific question", "approach": "concrete search strategy + data sources", "serves": ["P1", "P2"]},
+    {"id": "Q2", "title": "...", "approach": "...", "serves": ["P2"], "depends_on": ["Q1"]}
+  ]
+}
+```
+
+## When to use `depends_on` (DAG scheduling)
+
+The research executor runs questions in **topological order**. Questions with no dependencies run in parallel on level 0. A question whose `depends_on` lists prior Q IDs runs after those complete, and the executor passes those prerequisites' outputs into its prompt as context.
+
+Use `depends_on` when a later question genuinely needs the previous one's findings to scope itself. Typical patterns:
+
+- **Scope definition → deep dive**: "Q1: define the candidate set" (e.g. cameras in price range, trending repos, shortlisted papers). "Q2/Q3/...": depends_on Q1, compare/evaluate the candidates on specific axes.
+- **Event discovery → event analysis**: "Q1: what releases dropped on 2026-04-24?" → "Q2: depends_on Q1, for each release, extract reception/adoption signals".
+- **Entity identification → attribute lookup**: "Q1: who are the top 5 contributors to X?" → "Q2: depends_on Q1, for each, summarize their prior work".
+
+Do NOT use `depends_on` for:
+- Convenience ("it'd be nice if Q2 could see Q1"). If Q2 can scope itself independently, don't chain it.
+- Pure ordering preference. Only declare dependencies that are strictly required for Q2 to execute correctly.
+- Linear chains. A plan that serializes every Q behind the previous (Q2→Q1, Q3→Q2, Q4→Q3) defeats the parallel research pattern. In that case, collapse into a single question or redesign the decomposition.
+
+Default is NO `depends_on` — most questions should run in parallel.
+
+## Rules for good questions
+
+- **Decompose by analytical dimension, NOT by data source.** This is the most common mistake. If the goal mentions sources like "Hacker News, arXiv, Hugging Face", do NOT produce "Q1: what's on HN, Q2: what's on arXiv...". That forces each branch to be a one-source listing → the final report becomes an aggregation with no synthesis. Instead, split by **what you're looking for** — themes, signals, dimensions — and let each branch search ACROSS sources for evidence of that theme.
+    - ❌ Bad: "Q1: HN top AI posts / Q2: HF top models / Q3: arXiv top papers / Q4: cross-source synthesis"
+    - ✅ Good: "Q1: biggest technical release/breakthrough / Q2: dominant community sentiment / Q3: emerging research direction / Q4: industry moves (funding/hiring/product) / Q5: weak signals for future trends" — each branch searches HN + HF + arXiv + news for evidence of that theme.
+- **Non-overlapping**: each question covers a distinct angle. No two questions should return similar search results.
+- **Actionable**: each question must be answerable by searching the web, reading docs, or running code. Avoid meta-questions like "What is the background?" or "Why is this important?"
+- **Specific**: "What are the latency/throughput benchmarks of vLLM vs TGI on A100?" not "Compare inference frameworks".
+- **Approach must be concrete**: name specific search queries, websites, APIs, or data sources. "Search GitHub issues for memory leak reports" not "investigate issues". Include multiple sources in the approach when cross-source evidence strengthens the answer.
+- **Cover multiple dimensions**: consider what/how/why/comparison/tradeoff/risk angles as appropriate for the goal.
+- **Use concrete dates, never deictic time references.** Search engines cannot resolve "today", "今日", "this week", "recent", "最近". Every time reference must be an explicit date (e.g. "2026-04-16") or date range ("2026-04-14 to 2026-04-16"). Copy the dates from the goal verbatim. This applies to both question titles and approach text.
+    - ❌ Bad: "今日 HN 上最热的 AI 话题" / "What are recent arXiv papers on..."
+    - ✅ Good: "2026-04-16 当天 HN 上最热的 AI 话题" / "arXiv papers published 2026-04-14 to 2026-04-16 on..."
+
+## Rules for plan structure
+
+- 3–7 sections. 3–6 questions.
+- If the goal is narrow/trivial, produce 1 question and 2 sections.
+- Sections should map to report headings, not mirror questions 1:1.
+- Valid JSON only.
