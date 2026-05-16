@@ -570,57 +570,76 @@ async function runStandardMode(
     draftOutput = draftResult.output;
   }
 
-  // ── Critique (seq=5) ──
-  let critiqueOutput: string;
-  if (cache?.critiqueOutput && thesisAvailable) {
-    replayPhase(opts.turnId, opts.taskId, {
-      seq: 5, branch: 0, kind: "critique", label: "Self-critique (cached)",
-      output: cache.critiqueOutput, usage: cache.critiqueUsage,
-    });
-    usages.push(cache.critiqueUsage);
-    critiqueOutput = cache.critiqueOutput;
-  } else {
-    const critiquePhase = store.addPhase({ turnId: opts.turnId, seq: 5, branch: 0, kind: "critique", label: "Self-critique", createdAt: Date.now() });
-    const critiqueResult = await runPhaseLite({
-      taskId: opts.taskId, phaseId: critiquePhase.id, kind: "critique",
-      prompt: critiqueInstructionPrompt({ goal: opts.goal, thesis, outline: outlineText }),
-      messages: [
-        { role: "user", content: draftPromptText },
-        { role: "assistant", content: draftOutput },
-        { role: "user", content: critiqueInstructionPrompt({ goal: opts.goal, thesis, outline: outlineText }) },
-      ],
-    });
-    usages.push(critiqueResult.usage);
-    critiqueOutput = critiqueResult.output;
-  }
-
-  // ── Claim audit (seq=6) — verifiable-content check before revise ──
+  // ── Claim audit (seq=5) — runs BEFORE critique so we can early-stop
+  // when there are no unsupported claims. With v2 prompt + reference
+  // exemplars, a clean draft is increasingly common; the critique-revise
+  // pair adds 5-10% of quality but costs 30%+ in latency. Adaptive: only
+  // run the rewrite loop when there's something concrete to fix.
   const stdFindingTitles = findings.map((f) => ({ questionId: f.questionId, title: f.title }));
-  const stdAudit = await runClaimAudit(opts, 6, draftOutput, stdFindingTitles);
+  const stdAudit = await runClaimAudit(opts, 5, draftOutput, stdFindingTitles);
   usages.push(stdAudit.usage);
 
-  // ── Revise (seq=7, single pass — no quality loop in standard mode) ──
-  const revisePhase = store.addPhase({ turnId: opts.turnId, seq: 7, branch: 0, kind: "revise", label: "Final revision", createdAt: Date.now() });
-  const reviseResult = await runPhase({
-    taskId: opts.taskId, phaseId: revisePhase.id, kind: "revise",
-    prompt: reviseInstructionPrompt({
-      goal: opts.goal, toolsets: opts.toolsets, language: opts.language,
-      thesis, outline: outlineText,
-      unsupportedClaims: stdAudit.unsupported,
-    }),
-    conversationHistory: [
-      { role: "user", content: "Write a draft report." },
-      { role: "assistant", content: draftOutput },
-      { role: "user", content: "Critique this report." },
-      { role: "assistant", content: critiqueOutput },
-    ],
-  });
-  usages.push(reviseResult.usage);
+  let postReviseOutput = draftOutput;
+  let polishSeq = 6;
 
-  // ── Style gate (seq=8) — cheap copy-edit pass, mirrors deep mode's editor.
-  // Strips visible scaffold labels and tightens AI voice without restructuring.
+  if (stdAudit.unsupported.length > 0) {
+    // ── Critique (seq=6) only when audit found issues ──
+    let critiqueOutput: string;
+    if (cache?.critiqueOutput && thesisAvailable) {
+      replayPhase(opts.turnId, opts.taskId, {
+        seq: 6, branch: 0, kind: "critique", label: "Self-critique (cached)",
+        output: cache.critiqueOutput, usage: cache.critiqueUsage,
+      });
+      usages.push(cache.critiqueUsage);
+      critiqueOutput = cache.critiqueOutput;
+    } else {
+      const critiquePhase = store.addPhase({ turnId: opts.turnId, seq: 6, branch: 0, kind: "critique", label: "Self-critique", createdAt: Date.now() });
+      const critiqueResult = await runPhaseLite({
+        taskId: opts.taskId, phaseId: critiquePhase.id, kind: "critique",
+        prompt: critiqueInstructionPrompt({ goal: opts.goal, thesis, outline: outlineText }),
+        messages: [
+          { role: "user", content: draftPromptText },
+          { role: "assistant", content: draftOutput },
+          { role: "user", content: critiqueInstructionPrompt({ goal: opts.goal, thesis, outline: outlineText }) },
+        ],
+      });
+      usages.push(critiqueResult.usage);
+      critiqueOutput = critiqueResult.output;
+    }
+
+    // ── Revise (seq=7) ──
+    const revisePhase = store.addPhase({ turnId: opts.turnId, seq: 7, branch: 0, kind: "revise", label: "Final revision", createdAt: Date.now() });
+    const reviseResult = await runPhase({
+      taskId: opts.taskId, phaseId: revisePhase.id, kind: "revise",
+      prompt: reviseInstructionPrompt({
+        goal: opts.goal, toolsets: opts.toolsets, language: opts.language,
+        thesis, outline: outlineText,
+        unsupportedClaims: stdAudit.unsupported,
+      }),
+      conversationHistory: [
+        { role: "user", content: "Write a draft report." },
+        { role: "assistant", content: draftOutput },
+        { role: "user", content: "Critique this report." },
+        { role: "assistant", content: critiqueOutput },
+      ],
+    });
+    usages.push(reviseResult.usage);
+    postReviseOutput = reviseResult.output;
+    polishSeq = 8;
+    broadcast(opts.taskId, {
+      event: "pipeline.audit_decision",
+      data: { unsupported_count: stdAudit.unsupported.length, took_revise_path: true },
+    });
+  } else {
+    broadcast(opts.taskId, {
+      event: "pipeline.audit_decision",
+      data: { unsupported_count: 0, took_revise_path: false },
+    });
+  }
+
+  // ── Polish — runs in either path. seq=6 if audit was clean, seq=8 if revise ran.
   const styleGatePhase = store.addPhase({
-    turnId: opts.turnId, seq: 8, branch: 0, kind: "revise", label: "Polish",
+    turnId: opts.turnId, seq: polishSeq, branch: 0, kind: "revise", label: "Polish",
     createdAt: Date.now(),
   });
   const styleGateResult = await runPhaseLite({
@@ -628,13 +647,13 @@ async function runStandardMode(
     prompt: editorPrompt({ goal: opts.goal, language: opts.language, thesisPresent: thesis !== null }),
     messages: [
       { role: "user", content: "Here is the revised report." },
-      { role: "assistant", content: reviseResult.output },
+      { role: "assistant", content: postReviseOutput },
       { role: "user", content: editorPrompt({ goal: opts.goal, language: opts.language, thesisPresent: thesis !== null }) },
     ],
   });
   usages.push(styleGateResult.usage);
 
-  return stripScaffoldLabels(styleGateResult.output || reviseResult.output);
+  return stripScaffoldLabels(styleGateResult.output || postReviseOutput);
 }
 
 // ── Deep: plan → research → thesis → outline → draft → critique → revise → editor ─
