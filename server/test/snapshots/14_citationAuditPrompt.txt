@@ -1,0 +1,82 @@
+<role>
+You are auditing citations in a finished research report. For each `[label](url)` link in the report, check whether the claim adjacent to that citation is actually supported by the cited content — using ONLY the research findings provided below as ground truth.
+</role>
+
+<goal>
+调研一下 Sony A7M5 同等价位相机，性价比最高，参数最好，最适合在 live 等暗光抓拍人像。
+</goal>
+
+<research_findings>
+These are the full texts of the upstream research branches. They are the ONLY ground truth — if a claim's source URL appears here but the claim is not in the text, that's a misattribution. If the URL is not in any finding at all, that's a fabrication.
+
+### Q1: A7M5 ISO 表现
+
+DPReview studio scene shows A7M5 ISO 3200 luminance noise +0.3 stops vs A7IV
+([DPReview](https://www.dpreview.com/products/sony/slrs/sony_a7m5)).
+Photons-to-Photos PDR at base ISO is 11.4 EV
+([P2P chart](https://www.photonstophotos.net/Charts/PDR.htm)).
+
+B&H reviewer noted: "tracking on backlit faces drops at ISO 6400, the
+detection box flickers" ([B&H review](https://www.bhphotovideo.com/explora/photography/hands-on-review/sony-a7m5)).
+
+---
+
+### Q2: Z6III vs R6II 同价位对比
+
+Nikon Z6III 24MP partially-stacked sensor, 1/250s readout
+([Nikon press](https://www.nikonusa.com/press-room/nikon-z6iii)).
+
+R6II 24MP non-stacked, 1/63s readout — slower for fast subjects
+([Canon spec](https://www.usa.canon.com/cameras/eos-r6-mark-ii/spec)).
+
+Reddit r/photography thread on A7M5 镜头 selection: most quoted is
+the 35mm f/1.8 G as the workhorse for live abstract shots
+([Reddit](https://www.reddit.com/r/sonyalpha/comments/abc123)).
+</research_findings>
+
+<report>
+## TL;DR
+Z6III 暗光抓拍优于 A7M5 ([DPReview](https://www.dpreview.com/test)).
+
+## 镜头
+35mm f/1.8 G 是首选 ([Reddit](https://www.reddit.com/r/sonyalpha/comments/abc123)).
+</report>
+
+<what_to_flag>
+For each citation `[label](url)` in the report, classify it as:
+
+- **supported** — the claim made in the citing sentence appears (verbatim or as a clear paraphrase) in a finding that mentions the same URL or the same source domain. ✓ Do NOT include.
+
+- **misattributed** — the URL exists in a finding, BUT the specific claim made in the report does not match what that source actually said. Example: report says "Anthropic ARR $19B [link]" but the link's content in findings says "$5B ARR".
+
+- **fabricated** — the URL does NOT appear in any finding. The report invented this citation. (This is the highest-stakes failure.)
+
+- **stretched** — the URL exists and is on-topic, but the report uses it to support a claim materially stronger than what the source said. Example: source says "K7 has plenty of headroom for HD660S2"; report cites it for "K7 is the optimal pairing for HD660S2".
+
+Flag misattributed, fabricated, and stretched cases.
+</what_to_flag>
+
+<output_format>
+Output ONE JSON object inside a fenced ```json block:
+
+```json
+{
+  "misattributed": [
+    {
+      "section": "<heading text or '(no heading)'>",
+      "sentence": "<the citing sentence verbatim, ≤120 chars — truncate with … if longer>",
+      "citation_label": "<the [label] text of the offending citation>",
+      "issue": "<one of: 'misattributed' | 'fabricated' | 'stretched'>: <≤20-word reason>"
+    }
+  ]
+}
+```
+
+Rules:
+- Quote sentences VERBATIM. If the report is in Chinese (简体中文), output sentences in Chinese (简体中文).
+- Cap at 10 entries. If more, prioritize fabricated > stretched > misattributed.
+- A report with no citations should output `{"misattributed": []}`.
+- A report whose every citation matches findings should output `{"misattributed": []}`.
+- NO PROSE outside the JSON block.
+- Do NOT flag a citation just because it could be more specific. Only flag actual mismatches.
+</output_format>

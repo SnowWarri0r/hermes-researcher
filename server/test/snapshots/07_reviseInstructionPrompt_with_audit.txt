@@ -107,3 +107,16 @@ The claim auditor flagged 2 sentences that make a specific factual claim without
 
 Do NOT rewrite paragraphs that aren't on this list. Targeted edits only.
 </unsupported_claims>
+
+<misattributed_citations>
+The citation auditor flagged 1 citation whose linked source does NOT actually support the claim being made. These are the highest-stakes failures — a fabricated or misattributed citation is worse than no citation at all. Fix EACH:
+
+- **fabricated**: the URL does not exist in any research finding. REMOVE the link and either re-attribute to a real source from findings or soften the claim.
+- **misattributed**: the URL exists but the source said something different. RE-READ the cited finding and rewrite the claim to match what the source actually said.
+- **stretched**: the source is on-topic but does not support the strength of the claim. WEAKEN the claim to match what the source actually supports (e.g. "K7 has headroom for HD660S2" not "K7 is the optimal pairing").
+
+1. [TL;DR] stretched — source said comparable, not 'lower than' — citation `[DPReview test]`
+   "A7M5 在 ISO 6400 下噪点低于 Z6III。"
+
+Do NOT rewrite paragraphs that aren't on this list. Targeted edits only.
+</misattributed_citations>
