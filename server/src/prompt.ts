@@ -1110,6 +1110,8 @@ export function reviseInstructionPrompt(opts: {
   language?: string;
   thesis?: ParsedThesis | null;
   outline?: string;
+  /** Claim-audit findings to fix surgically (verifiable-content check). */
+  unsupportedClaims?: { section: string; sentence: string; issue: string }[];
 }): string {
   const toolsetsBlock =
     opts.toolsets.length > 0
@@ -1135,12 +1137,151 @@ If the previous draft printed visible scaffold labels (\`**IN —**\`, \`**OUT �
 If the critique flagged narrative issues (tagged N1–N5), fix THOSE specifically — do not rewrite sections that are already working.`
     : "";
 
+  const claimAuditBlock =
+    opts.unsupportedClaims && opts.unsupportedClaims.length > 0
+      ? `\n\n<unsupported_claims>
+The claim auditor flagged ${opts.unsupportedClaims.length} sentence${opts.unsupportedClaims.length === 1 ? "" : "s"} that make a specific factual claim without a source link or named attribution. Fix EACH of these surgically — either add a citation from the available research findings, attribute to a named source inline, or remove the unsupported specificity (e.g. soften "60% of developers" to a non-numeric phrasing if no source exists).
+
+${opts.unsupportedClaims
+  .map(
+    (c, i) => `${i + 1}. [${c.section || "no heading"}] ${c.issue}
+   "${c.sentence}"`,
+  )
+  .join("\n")}
+
+Do NOT rewrite paragraphs that aren't on this list. Targeted edits only.
+</unsupported_claims>`
+      : "";
+
   return `# Revise your draft based on the critique above
 
 Apply the critique. Output the complete revised report.
-${toolsetsBlock}${narrativeReminder}
+${toolsetsBlock}${narrativeReminder}${claimAuditBlock}
 
 ${styleGuide(opts.language)}`;
+}
+
+// ---------------------------------------------------------------------------
+// Claim audit — verifiable-content check (replaces unreliable style markers).
+// Per a 2025 AI-text detection survey: stylistic features (repetition, syntax
+// patterns) are unreliable because modern models can adapt; reviewers should
+// "privilege verifiable content checks over stylistic diagnostics".
+//
+// This prompt enumerates every CLAIM SENTENCE in the report and tags each as:
+//   - cited:   has [text](url) link or quotes a named source inline
+//   - attributed: refers to a specific Q# / source by name without URL
+//   - unsupported: makes a specific factual claim with neither
+//
+// Cheap, focused, returns JSON. Used between revise and editor in deep mode.
+// ---------------------------------------------------------------------------
+export interface UnsupportedClaim {
+  section: string;
+  sentence: string;
+  issue: string;
+}
+
+export function claimAuditPrompt(opts: {
+  goal: string;
+  report: string;
+  findings: { questionId: string; title: string }[];
+  language?: string;
+}): string {
+  const findingsList = opts.findings
+    .map((f) => `- ${f.questionId}: ${f.title}`)
+    .join("\n");
+
+  const lang = opts.language ?? "auto";
+
+  return `<role>
+You are auditing a finished research report for unsupported factual claims. Your job is mechanical: find every sentence that asserts a SPECIFIC FACT (number, date, version, ranking, comparison, named-entity behavior) and check whether the report itself supports it.
+</role>
+
+<goal>
+${opts.goal}
+</goal>
+
+<available_findings>
+The report was written from these research branches (you don't see their full text — only titles for context):
+${findingsList}
+</available_findings>
+
+<report>
+${opts.report}
+</report>
+
+<what_counts_as_a_claim>
+A "claim sentence" is one that asserts a specific verifiable thing. Examples (each IS a claim):
+- "Anthropic's ARR reached \$19B by March 2026."
+- "Claude Code is the leading agent framework."
+- "60% of developers prefer Cursor over Copilot."
+- "HD660S2 has 150-ohm impedance."
+- "K7's 4.4mm balanced output delivers 560mW into 300Ω."
+
+What does NOT count (skip these):
+- Opening framing: "本文将探讨..." / "This report covers..."
+- Paraphrased background already grounded earlier in same paragraph.
+- Pure connective sentences with no novel fact.
+</what_counts_as_a_claim>
+
+<support_levels>
+For each claim sentence, classify as one of:
+
+- **cited** — the sentence (or its immediate sentence neighbour) contains \`[text](url)\` linking to a specific source. ✓ This is fine. Do NOT include in your output.
+- **attributed** — names a specific source inline (e.g. "Anthropic 官方页面写…", "Headfonia 测得…", "according to the README", "Q3 找到") without a URL but with a verifiable referent. ✓ Also fine. Do NOT include.
+- **unsupported** — makes a specific factual claim with neither a citation link NOR an inline source attribution. THIS is what you flag.
+
+Vague claims that aren't specific enough to verify are also unsupported, e.g.:
+- "市场反响不错" (no number, no source)
+- "成为主流选择" (no comparison, no source)
+- "性能领先" (no benchmark, no source)
+</support_levels>
+
+<output_format>
+Output ONE JSON object inside a fenced \`\`\`json block:
+
+\`\`\`json
+{
+  "unsupported": [
+    {
+      "section": "<section heading text or '(no heading)' if before any heading>",
+      "sentence": "<the offending sentence verbatim, ≤120 chars — truncate with … if longer>",
+      "issue": "<short reason: 'no source', 'vague claim no number', 'specific number but no link', 'cites Q# but no URL'>"
+    }
+  ]
+}
+\`\`\`
+
+Rules:
+- Quote sentences VERBATIM. If 报告 is in ${lang}, output sentences in ${lang}.
+- Cap at 12 entries. If more than 12 unsupported, prioritize ones with specific numbers (those are the highest-stakes fabrications).
+- If the report is fully supported, output \`{"unsupported": []}\`.
+- NO PROSE outside the JSON block.
+</output_format>`;
+}
+
+export function parseClaimAudit(raw: string): UnsupportedClaim[] {
+  const candidates = extractJsonCandidates(raw);
+  for (const c of candidates) {
+    let parsed: { unsupported?: unknown } | null = null;
+    try { parsed = JSON.parse(c.trim()); } catch {
+      try { parsed = JSON.parse(jsonrepair(c.trim())); } catch { continue; }
+    }
+    if (!parsed || !Array.isArray(parsed.unsupported)) continue;
+    return (parsed.unsupported as unknown[])
+      .filter(
+        (e): e is { section: string; sentence: string; issue: string } =>
+          typeof e === "object" &&
+          e !== null &&
+          typeof (e as { sentence?: unknown }).sentence === "string",
+      )
+      .slice(0, 20)
+      .map((e) => ({
+        section: typeof e.section === "string" ? e.section : "",
+        sentence: e.sentence,
+        issue: typeof e.issue === "string" ? e.issue : "unsupported",
+      }));
+  }
+  return [];
 }
 
 // ---------------------------------------------------------------------------
