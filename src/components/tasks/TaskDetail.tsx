@@ -549,6 +549,7 @@ export function TaskDetail() {
                     streamingPhaseKind={streamingPhaseKind}
                     streamingByPhase={streamingByPhase}
                   />
+                  <RaceQualityPanel />
                   <EventLogTail phases={viewingTurn.phases} />
                 </div>
               )}
@@ -704,6 +705,88 @@ function PipelineViewToggle() {
       >
         LIST
       </button>
+    </div>
+  );
+}
+
+function RaceQualityPanel() {
+  const checks = useTaskStore((s) => s.qualityChecks);
+  if (checks.length === 0) return null;
+  const latest = checks[checks.length - 1];
+
+  const dims: { label: string; key: keyof NonNullable<typeof latest.race>; abbr: string }[] = [
+    { label: "Comprehensiveness", key: "comprehensiveness", abbr: "Comp" },
+    { label: "Insight", key: "insight", abbr: "Insight" },
+    { label: "Instruction-Following", key: "instruction_following", abbr: "Instr" },
+    { label: "Readability", key: "readability", abbr: "Read" },
+  ];
+
+  const colorFor = (n: number): string => {
+    if (n >= 8) return "text-emerald-signal";
+    if (n >= 6) return "text-snow";
+    if (n >= 4) return "text-warning";
+    return "text-danger";
+  };
+  const barColorFor = (n: number): string => {
+    if (n >= 8) return "var(--color-emerald-signal)";
+    if (n >= 6) return "var(--color-mint, var(--color-emerald-signal))";
+    if (n >= 4) return "var(--color-warning)";
+    return "var(--color-danger)";
+  };
+
+  return (
+    <div className="bg-carbon border border-charcoal rounded-md px-4 py-3 space-y-2.5">
+      <div className="flex items-center gap-2">
+        <span className="text-xs font-medium text-slate-steel uppercase tracking-wider">
+          Quality · RACE
+        </span>
+        <span className="text-[10px] font-mono text-slate-steel">
+          iter {latest.iteration}
+        </span>
+        <div className="flex-1" />
+        <span
+          className={`text-[11px] font-mono font-medium ${
+            latest.pass ? "text-emerald-signal" : "text-warning"
+          }`}
+        >
+          {latest.pass ? "✓ pass" : "✗ retry"} · {latest.score}/10
+        </span>
+      </div>
+      {latest.race && (
+        <div className="grid grid-cols-4 gap-2">
+          {dims.map((d) => {
+            const v = latest.race![d.key];
+            return (
+              <div key={d.key} className="space-y-1" title={d.label}>
+                <div className="flex items-baseline justify-between gap-1">
+                  <span className="text-[10px] font-mono text-slate-steel tracking-wider">
+                    {d.abbr}
+                  </span>
+                  <span className={`text-[12px] font-mono tabular-nums ${colorFor(v)}`}>
+                    {v}
+                  </span>
+                </div>
+                <div className="h-1 bg-charcoal rounded-sm overflow-hidden">
+                  <div
+                    className="h-full transition-all"
+                    style={{ width: `${v * 10}%`, background: barColorFor(v) }}
+                  />
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+      {latest.issues.length > 0 && (
+        <div className="space-y-0.5 pt-1 border-t border-charcoal-subtle">
+          {latest.issues.slice(0, 5).map((issue, i) => (
+            <div key={i} className="text-[11px] text-parchment leading-snug">
+              <span className="text-slate-steel/60 font-mono mr-1">·</span>
+              {issue}
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
