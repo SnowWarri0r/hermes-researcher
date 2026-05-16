@@ -187,6 +187,15 @@ export interface ListTasksResponse {
 
 // Pipeline contract ---------------------------------------------------------
 
+/** Reader/stakeholder archetype the plan should cover (STORM-style
+ *  perspective mining — NAACL 2024). Single-perspective plans miss angles;
+ *  forcing the planner to enumerate distinct readers improves coverage. */
+export interface PlanPerspective {
+  id: string;            // "P1", "P2", ...
+  name: string;          // short noun-phrase, e.g. "声学工程师"
+  wants: string;         // 1-line description of what they want from this report
+}
+
 export interface ResearchQuestion {
   id: string;
   title: string;
@@ -194,9 +203,14 @@ export interface ResearchQuestion {
   /** Optional prerequisite question IDs. Research executor runs this question
    *  only after its prerequisites complete, and passes their outputs as context. */
   depends_on?: string[];
+  /** Which perspectives (by id) this question primarily serves. Used for
+   *  coverage check: every perspective should be served by ≥1 question. */
+  serves?: string[];
 }
 
 export interface Plan {
+  /** Optional — only populated by perspective-aware plans. */
+  perspectives?: PlanPerspective[];
   sections: string[];
   questions: ResearchQuestion[];
 }
