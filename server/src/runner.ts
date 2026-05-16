@@ -771,7 +771,13 @@ async function runDeepMode(
       const quality = await evaluateReportQuality(opts, reviseResult.output, thesis);
       broadcast(opts.taskId, {
         event: "pipeline.quality_check",
-        data: { score: quality.score, pass: quality.pass, issues: quality.issues, iteration: iteration + 1 },
+        data: {
+          score: quality.score,
+          pass: quality.pass,
+          issues: quality.issues,
+          race: quality.race,
+          iteration: iteration + 1,
+        },
       });
 
       if (quality.pass) break;
@@ -1018,7 +1024,18 @@ async function evaluateReportQuality(
   opts: PipelineOpts,
   report: string,
   thesis: ParsedThesis | null,
-): Promise<{ pass: boolean; score: number; issues: string[] }> {
+): Promise<{
+  pass: boolean;
+  score: number;
+  issues: string[];
+  /** RACE 4-dim scores (DeepResearch Bench 2025 / Mind DR 2026). */
+  race?: {
+    comprehensiveness: number;
+    insight: number;
+    instruction_following: number;
+    readability: number;
+  };
+}> {
   try {
     const model = getModelForPhase("critique");
     const { content } = await hermesChat({
@@ -1028,13 +1045,54 @@ async function evaluateReportQuality(
 
     const jsonBlock = content.match(/```json\s*([\s\S]*?)```/i);
     const candidate = (jsonBlock ? jsonBlock[1] : content).trim();
-    let parsed: { pass?: boolean; score?: number; issues?: string[] };
-    try { parsed = JSON.parse(candidate); } catch { try { parsed = JSON.parse(jsonrepair(candidate)); } catch { return { pass: true, score: 7, issues: [] }; } }
+    let parsed: {
+      pass?: boolean;
+      score?: number;
+      issues?: string[];
+      comprehensiveness?: number;
+      insight?: number;
+      instruction_following?: number;
+      readability?: number;
+    };
+    try { parsed = JSON.parse(candidate); } catch {
+      try { parsed = JSON.parse(jsonrepair(candidate)); } catch {
+        return { pass: true, score: 7, issues: [] };
+      }
+    }
+
+    const num = (v: unknown, fallback: number): number =>
+      typeof v === "number" && Number.isFinite(v) ? Math.round(v) : fallback;
+    const comp = num(parsed.comprehensiveness, 7);
+    const insi = num(parsed.insight, 7);
+    const inst = num(parsed.instruction_following, 7);
+    const read = num(parsed.readability, 7);
+    // Reapply weighted average — the model occasionally rounds wrong.
+    const computed =
+      0.30 * comp + 0.30 * insi + 0.25 * inst + 0.15 * read;
+    const score =
+      typeof parsed.score === "number" && Number.isFinite(parsed.score)
+        ? Math.round(parsed.score)
+        : Math.round(computed);
+
+    // Locally enforce the pass rule from the prompt: every dim ≥6, score ≥7.
+    const dimsOk = comp >= 6 && insi >= 6 && inst >= 6 && read >= 6;
+    const pass =
+      typeof parsed.pass === "boolean"
+        ? parsed.pass && dimsOk && score >= 7
+        : dimsOk && score >= 7;
 
     return {
-      pass: parsed.pass ?? (parsed.score !== undefined ? parsed.score >= 7 : true),
-      score: parsed.score ?? 7,
-      issues: Array.isArray(parsed.issues) ? parsed.issues.map(String).slice(0, 3) : [],
+      pass,
+      score,
+      issues: Array.isArray(parsed.issues)
+        ? parsed.issues.map(String).slice(0, 5)
+        : [],
+      race: {
+        comprehensiveness: comp,
+        insight: insi,
+        instruction_following: inst,
+        readability: read,
+      },
     };
   } catch {
     return { pass: true, score: 7, issues: [] };
