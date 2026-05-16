@@ -6,6 +6,7 @@ import rehypeKatex from "rehype-katex";
 import type { PhaseDetail, PhaseKind, PhaseStatus } from "../../types";
 import { sanitizeStreamingMarkdown } from "./TaskDetail";
 import { useStickyAutoScroll } from "../../hooks/useStickyAutoScroll";
+import { useTaskStore } from "../../store/tasks";
 
 function normalizeLatex(text: string): string {
   let s = text.replace(/\\\[([\s\S]*?)\\\]/g, (_, inner) => `$$${inner}$$`);
@@ -170,6 +171,17 @@ function PhaseRow({
   const duration = formatDuration(phase, tickNow);
   const tools = toolCount(phase);
 
+  // Surface the audit decision on the Claim audit row — the user can see
+  // whether the rewrite loop ran or got skipped.
+  const auditDecision = useTaskStore((s) => s.auditDecision);
+  const isAuditPhase = phase.label === "Claim audit";
+  const auditBadge =
+    isAuditPhase && phase.status === "completed" && auditDecision
+      ? auditDecision.tookRevisePath
+        ? `${auditDecision.unsupportedCount} unsupported → revise`
+        : `0 unsupported → polish (skipped revise)`
+      : null;
+
   return (
     <div
       className={`bg-carbon border border-charcoal rounded-md transition-colors ${
@@ -186,6 +198,17 @@ function PhaseRow({
         )}
         <span className="text-[13px] text-snow flex-1 min-w-0 break-words" title={phase.label}>
           {phase.label}
+          {auditBadge && (
+            <span
+              className={`ml-2 text-[10px] font-mono ${
+                auditDecision?.tookRevisePath
+                  ? "text-warning"
+                  : "text-emerald-signal"
+              }`}
+            >
+              · {auditBadge}
+            </span>
+          )}
         </span>
         {(phase.usage?.input_tokens !== undefined ||
           phase.usage?.output_tokens !== undefined) && (

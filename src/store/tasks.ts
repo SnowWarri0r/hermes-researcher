@@ -29,6 +29,11 @@ export interface QualityCheck {
   };
 }
 
+export interface AuditDecision {
+  unsupportedCount: number;
+  tookRevisePath: boolean;
+}
+
 interface TaskStore {
   tasks: Task[];
   total: number;
@@ -54,6 +59,10 @@ interface TaskStore {
   /** RACE quality-gate breakdowns from pipeline.quality_check events,
    *  most recent last. Only populated for the currently active task. */
   qualityChecks: QualityCheck[];
+
+  /** Last pipeline.audit_decision event for the active task — tells the
+   *  user whether the rewrite loop ran or got skipped. */
+  auditDecision: AuditDecision | null;
 
   setConnected: (c: boolean) => void;
   setSearch: (q: string) => void;
@@ -93,6 +102,7 @@ export const useTaskStore = create<TaskStore>()((set, get) => ({
   streamingPhaseKind: "",
   streamingByPhase: {},
   qualityChecks: [],
+  auditDecision: null,
   activeUnsub: null,
   chatMessages: [],
   streamingChatByMessage: {},
@@ -195,6 +205,7 @@ export const useTaskStore = create<TaskStore>()((set, get) => ({
       streamingPhaseKind: "",
       streamingByPhase: {},
       qualityChecks: [],
+  auditDecision: null,
       chatMessages: [],
       streamingChatByMessage: {},
       streamingChatEventsByMessage: {},
@@ -296,6 +307,22 @@ export const useTaskStore = create<TaskStore>()((set, get) => ({
               }
               set({ streamingText: "" });
               get().refreshActive();
+            }
+
+            if (event.event === "pipeline.audit_decision") {
+              const data = event as unknown as Record<string, unknown>;
+              set({
+                auditDecision: {
+                  unsupportedCount:
+                    typeof data.unsupported_count === "number"
+                      ? data.unsupported_count
+                      : 0,
+                  tookRevisePath:
+                    typeof data.took_revise_path === "boolean"
+                      ? data.took_revise_path
+                      : false,
+                },
+              });
             }
 
             if (event.event === "pipeline.quality_check") {
@@ -414,6 +441,7 @@ export const useTaskStore = create<TaskStore>()((set, get) => ({
       streamingPhaseKind: "",
       streamingByPhase: {},
       qualityChecks: [],
+  auditDecision: null,
       chatMessages: [],
       streamingChatByMessage: {},
       streamingChatEventsByMessage: {},
