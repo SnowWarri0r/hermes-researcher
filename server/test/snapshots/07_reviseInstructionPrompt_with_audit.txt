@@ -1,36 +1,3 @@
-# Revise your draft based on the critique above
-
-Apply the critique. Output the complete revised report.
-
-
-You may use these toolsets for fact-checking if needed: websearch
-
-## Preserve the narrative arc (mandatory)
-
-**Central claim**: 在 2026-04 同价位机身里，Z6III 暗光抓拍胜出，A7M5 仅在镜头生态上保留优势。
-
-Your revision MUST preserve:
-- TL;DR opening as a flat declarative paraphrase of the central_claim
-- Section headings matching plan.sections verbatim
-- Cross-section flow: a shared noun in the first/last sentences of each section (the outline JSON's `tie_to_previous` / `tee_up_next` values). These nouns weave INTO prose — they are NOT labels.
-- Each section advancing its sub-claim once, inline.
-- Final "so what" judgment.
-
-If the previous draft printed visible scaffold labels (`**IN —**`, `**OUT —**`, `**Connection IN/OUT**`, `**Section claim**`, `**Sub-claim：**`, `**小结论：**`, `### Signal vs noise`, `### 信号 vs 噪音`, or quoted JSON keys like `tie_to_previous`), STRIP the label and rewrite the line as natural prose that still carries the analytical content.
-
-If the critique flagged narrative issues (tagged N1–N5), fix THOSE specifically — do not rewrite sections that are already working.
-
-<unsupported_claims>
-The claim auditor flagged 2 sentences that make a specific factual claim without a source link or named attribution. Fix EACH of these surgically — either add a citation from the available research findings, attribute to a named source inline, or remove the unsupported specificity (e.g. soften "60% of developers" to a non-numeric phrasing if no source exists).
-
-1. [TL;DR] war-metaphor + no number
-   "Z6III 在暗光抓拍上压过 A7M5。"
-2. [对比同价位] vague claim no source
-   "A7M5 镜头生态领先。"
-
-Do NOT rewrite paragraphs that aren't on this list. Targeted edits only.
-</unsupported_claims>
-
 <role>
 You are a senior analyst writing a research report for working professionals — engineers, founders, investors, decision-makers. Your reader already knows the basics of the domain; they want specifics, mechanism, and how this changes their decisions. Write like the people you respect read, not like a content-marketing post.
 </role>
@@ -105,3 +72,38 @@ The following phrases / shapes ALWAYS read as AI digest filler. They have no mea
 - **Stacked adjectives**: "清晰的、稳定的、可控的". Pick the one most precise word or drop them all.
 - **Printed scaffolding**: `*IN：xxx*`, `**OUT — xxx**`, `**Section claim:**`, `**Sub-claim：**`, `**小结论：**`, `### Signal vs noise`, `### 信号 vs 噪音`. These are private planning tools. They MUST NOT appear as visible text.
 </recurring_failure_modes>
+
+---
+
+# Revise your draft based on the critique above
+
+Apply the critique. Output the complete revised report.
+
+
+You may use these toolsets for fact-checking if needed: websearch
+
+## Preserve the narrative arc (mandatory)
+
+**Central claim**: 在 2026-04 同价位机身里，Z6III 暗光抓拍胜出，A7M5 仅在镜头生态上保留优势。
+
+Your revision MUST preserve:
+- TL;DR opening as a flat declarative paraphrase of the central_claim
+- Section headings matching plan.sections verbatim
+- Cross-section flow: a shared noun in the first/last sentences of each section (the outline JSON's `tie_to_previous` / `tee_up_next` values). These nouns weave INTO prose — they are NOT labels.
+- Each section advancing its sub-claim once, inline.
+- Final "so what" judgment.
+
+If the previous draft printed visible scaffold labels (`**IN —**`, `**OUT —**`, `**Connection IN/OUT**`, `**Section claim**`, `**Sub-claim：**`, `**小结论：**`, `### Signal vs noise`, `### 信号 vs 噪音`, or quoted JSON keys like `tie_to_previous`), STRIP the label and rewrite the line as natural prose that still carries the analytical content.
+
+If the critique flagged narrative issues (tagged N1–N5), fix THOSE specifically — do not rewrite sections that are already working.
+
+<unsupported_claims>
+The claim auditor flagged 2 sentences that make a specific factual claim without a source link or named attribution. Fix EACH of these surgically — either add a citation from the available research findings, attribute to a named source inline, or remove the unsupported specificity (e.g. soften "60% of developers" to a non-numeric phrasing if no source exists).
+
+1. [TL;DR] war-metaphor + no number
+   "Z6III 在暗光抓拍上压过 A7M5。"
+2. [对比同价位] vague claim no source
+   "A7M5 镜头生态领先。"
+
+Do NOT rewrite paragraphs that aren't on this list. Targeted edits only.
+</unsupported_claims>
