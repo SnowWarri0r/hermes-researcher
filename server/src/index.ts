@@ -188,6 +188,10 @@ app.post("/api/tasks/:id/retry", (c) => {
   if (lastTurn) {
     for (const phase of lastTurn.phases) {
       if (phase.status !== "completed") continue;
+      // Skip phases that completed but produced no content (e.g. gateway returned
+      // an error wrapped as success). Caching empty output would poison downstream
+      // phases on retry — they'd synthesize on top of nothing.
+      if (!phase.output || phase.output.trim() === "") continue;
       if (phase.kind === "plan") {
         // Plan branch 0 = original plan, branch 2 = revised plan after review rejection
         if (phase.branch === 0) {

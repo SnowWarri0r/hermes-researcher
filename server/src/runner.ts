@@ -172,6 +172,14 @@ async function runPhase(opts: {
 
   const completedAt = Date.now();
 
+  // Treat empty output as a failure. The gateway has historically returned
+  // HTTP 200 with no content when an upstream provider error was swallowed
+  // (e.g. openai-python SDK NoneType bug pre-v0.14.0); a "completed" phase
+  // with no text poisons downstream phases and retry cache.
+  if (!failedError && (!finalOutput || finalOutput.trim() === "")) {
+    failedError = "Run completed with empty output";
+  }
+
   if (failedError) {
     store.completePhase({
       phaseId,
@@ -248,6 +256,13 @@ async function runPhaseLite(opts: {
     const completedAt = Date.now();
     const output = stream.content;
     const usage = stream.usage;
+
+    // Empty content means the chat stream produced no deltas — typically the
+    // gateway returned HTTP 200 with no body when an upstream provider error
+    // was swallowed. Surface this as a failure so retry cache stays clean.
+    if (!output || output.trim() === "") {
+      throw new Error("Chat completion produced no content");
+    }
 
     clearStreamBuffer(phaseId);
     store.completePhase({
